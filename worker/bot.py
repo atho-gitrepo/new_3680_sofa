@@ -8,6 +8,11 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import esd 
 
+# --- GLOBAL VARIABLES ---
+# Declare the client globally, but initialize it to None
+SOFASCORE_CLIENT = None 
+firebase_manager = None # Declare Firebase Manager globally
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -20,7 +25,6 @@ logging.basicConfig(
 logger = logging.getLogger("FootballBettingBot")
 
 # Load environment variables
-# NOTE: API_KEY is kept for context but is not used by the esd library.
 API_KEY = os.getenv("API_KEY") 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -40,21 +44,43 @@ STATUS_HALFTIME = 'HT'
 STATUS_FINISHED = ['FT', 'AET', 'PEN'] # Used for internal status cleanup/resolution check
 BET_SCORES_80_MINUTE = ['3-1','2-0']
 
-# --- NEW: Initialize Sofascore Client (Global object for reuse) ---
-try:
-    SOFASCORE_CLIENT = esd.SofascoreClient()
-except Exception as e:
-    logger.error(f"Failed to initialize SofascoreClient: {e}")
-    SOFASCORE_CLIENT = None
+# =========================================================
+# 📌 FIX: CLIENT INITIALIZATION LOGIC
+# This function handles the creation of the Sofascore Client.
+# =========================================================
+
+def initialize_sofascore_client():
+    """Initializes and sets the global SOFASCORE_CLIENT object."""
+    global SOFASCORE_CLIENT
+    
+    if SOFASCORE_CLIENT is not None:
+        return True # Already initialized
+
+    logger.info("Attempting to initialize Sofascore client...")
+    try:
+        # Based on the error and the 'esd' __init__.py, 
+        # the client is simply failing to instantiate here. 
+        # If your 'esd' library requires any arguments (like API_KEY or a config), 
+        # they must be added to this line:
+        SOFASCORE_CLIENT = esd.SofascoreClient()
+        
+        logger.info("Sofascore client successfully initialized.")
+        return True
+    except Exception as e:
+        # Log the critical failure with traceback for debugging
+        logger.critical(f"FATAL: SofascoreClient failed to initialize. Error: {e}", exc_info=True)
+        SOFASCORE_CLIENT = None
+        return False
+
 
 class FirebaseManager:
     """Manages all interactions with the Firebase Firestore database."""
     def __init__(self, credentials_json_string):
+        self.db = None
         try:
             logger.info("Initializing Firebase...")
             if not credentials_json_string:
                 logger.warning("FIREBASE_CREDENTIALS_JSON is empty. Skipping Firebase initialization.")
-                self.db = None
                 return
 
             cred_dict = json.loads(credentials_json_string)
@@ -66,8 +92,9 @@ class FirebaseManager:
         except Exception as e:
             logger.error(f"Failed to initialize Firebase: {e}")
             self.db = None
+            # Re-raise to be caught in the main execution block
             raise
-
+            
     # Note: All Firebase methods should check if self.db is not None
     def get_tracked_match(self, match_id):
         if not self.db: return None
@@ -198,14 +225,6 @@ class FirebaseManager:
         except Exception as e:
             logger.error(f"Firestore Error during update_last_api_call: {e}")
 
-# Initialize Firebase
-try:
-    firebase_manager = FirebaseManager(FIREBASE_CREDENTIALS_JSON_STRING)
-except Exception as e:
-    logger.critical(f"Critical Firebase initialization error: {e}")
-    if not firebase_manager.db:
-        logger.warning("Continuing bot execution with disabled Firebase functionality.")
-
 def send_telegram(msg, max_retries=3):
     """Send Telegram message with retry mechanism"""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
@@ -252,14 +271,16 @@ def get_finished_match_details(fixture_id):
     
     Returns: The esd.sofascore.Event object if found, otherwise None.
     """
-    if not SOFASCORE_CLIENT: return None
+    if not SOFASCORE_CLIENT: 
+        logger.error("Sofascore client is not initialized.")
+        return None
     
     try:
         # Search for the match by its ID
         # esd.SofascoreClient.search expects a string for the query
         match_list = SOFASCORE_CLIENT.search(
             str(fixture_id), 
-            entity=esd.sofascore.EntityType.EVENT
+            entity=esd.SofascoreTypes.EntityType.EVENT
         )
         
         # Filter the result to ensure we get the exact match
@@ -583,8 +604,30 @@ def run_bot_once():
     
     logger.info("Bot cycle completed.")
 
+# =========================================================
+# 🚀 MAIN EXECUTION BLOCK (Corrected Startup Logic)
+# =========================================================
 if __name__ == "__main__":
     logger.info("Starting Football Betting Bot")
+    
+    # 1. Initialize Firebase Manager
+    try:
+        firebase_manager = FirebaseManager(FIREBASE_CREDENTIALS_JSON_STRING)
+    except Exception:
+        # FirebaseManager __init__ logs the error and raises the exception.
+        # We catch it here to prevent the bot from running.
+        pass
+        
+    if firebase_manager is None or not firebase_manager.db:
+         logger.critical("Bot cannot proceed. Firebase initialization failed. Exiting.")
+         exit(1)
+
+    # 2. Initialize the Sofascore Client
+    if not initialize_sofascore_client():
+        # Initialization failed and a critical error was logged inside the function.
+        logger.critical("Bot cannot proceed. Sofascore client initialization failed. Exiting.")
+        exit(1) 
+
     # Initial startup message
     send_telegram("🚀 Football Betting Bot Started Successfully! Monitoring live games (via Sofascore API).")
     
@@ -592,7 +635,7 @@ if __name__ == "__main__":
         try:
             run_bot_once()
         except Exception as e:
-            error_msg = f"❌ CRITICAL ERROR: {str(e)}"
+            error_msg = f"❌ CRITICAL ERROR in run_bot_once: {str(e)}"
             logger.critical(error_msg, exc_info=True)
             send_telegram(error_msg[:300])
         finally:
