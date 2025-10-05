@@ -4,6 +4,8 @@ Sofascore service module
 
 from __future__ import annotations
 import playwright
+import os
+import logging
 from ..utils import get_json, get_today
 from .endpoints import SofascoreEndpoints
 from .types import (
@@ -53,13 +55,12 @@ class SofascoreService:
     A class to represent the SofaScore service.
     """
 
-    def __init__(self, browser_path: str):
+    def __init__(self, browser_path: str = None):
         """
         Initializes the SofaScore service.
         """
-        self.browser_path = (
-            browser_path or r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-        )
+        self.logger = logging.getLogger(__name__)
+        self.browser_path = browser_path
         self.endpoints = SofascoreEndpoints()
         self.playwright = self.browser = self.page = None
         self.__init_playwright()
@@ -68,17 +69,55 @@ class SofascoreService:
         """
         Initialize the Playwright and browser instances.
         """
-        try:
-            self.playwright = playwright.sync_api.sync_playwright().start()
-            self.browser = self.playwright.chromium.launch(
-                headless=True, executable_path=self.browser_path
-            )
-            self.page = self.browser.new_page()
-        except Exception as exc:
-            message = (
-                f'{self.browser_path} is not a valid browser path. Is installed?'
-            )
-            raise RuntimeError(message) from exc
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                self.logger.info(f"Initializing Playwright (attempt {attempt + 1})")
+                self.playwright = playwright.sync_api.sync_playwright().start()
+                
+                # Browser launch options for Railway/cloud environments
+                launch_options = {
+                    'headless': True,
+                    'args': [
+                        '--no-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu',
+                        '--disable-web-security',
+                        '--disable-features=VizDisplayCompositor',
+                        '--disable-background-timer-throttling',
+                        '--disable-backgrounding-occluded-windows',
+                        '--disable-renderer-backgrounding',
+                        '--single-process'
+                    ],
+                    'timeout': 30000
+                }
+                
+                # Only use executable_path if provided and exists
+                if self.browser_path and os.path.exists(self.browser_path):
+                    launch_options['executable_path'] = self.browser_path
+                    self.logger.info(f"Using browser at: {self.browser_path}")
+                    self.browser = self.playwright.chromium.launch(**launch_options)
+                else:
+                    # Use Playwright's bundled Chromium (works on Railway)
+                    self.logger.info("Using Playwright's bundled Chromium")
+                    self.browser = self.playwright.chromium.launch(**launch_options)
+                
+                # Create page with better timeout settings
+                self.page = self.browser.new_page()
+                self.page.set_default_timeout(30000)
+                self.page.set_default_navigation_timeout(30000)
+                
+                self.logger.info("Playwright initialized successfully")
+                return
+                
+            except Exception as exc:
+                self.logger.error(f"Playwright initialization failed (attempt {attempt + 1}): {str(exc)}")
+                # Clean up on failure
+                if self.playwright:
+                    self.playwright.stop()
+                if attempt == max_retries - 1:
+                    message = f"Failed to initialize browser after {max_retries} attempts: {str(exc)}"
+                    raise RuntimeError(message) from exc
 
     def close(self):
         """
@@ -91,8 +130,10 @@ class SofascoreService:
                 self.browser.close()
             if self.playwright:
                 self.playwright.stop()
+            self.logger.info("Playwright resources closed successfully")
         except Exception as exc:
-            raise RuntimeError("Failed to close browser") from exc
+            self.logger.error(f"Failed to close browser: {str(exc)}")
+            # Don't raise in close method to avoid masking other errors
 
     def __del__(self):
         """
@@ -115,6 +156,7 @@ class SofascoreService:
             data = get_json(self.page, url)["event"]
             return parse_event(data)
         except Exception as exc:
+            self.logger.error(f"Failed to get event {event_id}: {str(exc)}")
             raise exc
 
     def get_events(self, date: str = 'today') -> list[Event]:
@@ -133,6 +175,7 @@ class SofascoreService:
             url = self.endpoints.events_endpoint.format(date=date)
             return parse_events(get_json(self.page, url)["events"])
         except Exception as exc:
+            self.logger.error(f"Failed to get events for date {date}: {str(exc)}")
             raise exc
 
     def get_live_events(self) -> list[Event]:
@@ -146,6 +189,7 @@ class SofascoreService:
             url = self.endpoints.live_events_endpoint
             return parse_events(get_json(self.page, url)["events"])
         except Exception as exc:
+            self.logger.error(f"Failed to get live events: {str(exc)}")
             raise exc
 
     def get_player(self, player_id: int) -> Player:
@@ -168,6 +212,7 @@ class SofascoreService:
                 return player
             return Player()
         except Exception as exc:
+            self.logger.error(f"Failed to get player {player_id}: {str(exc)}")
             raise exc
 
     def get_player_attributes(self, player_id: int) -> PlayerAttributes:
@@ -187,6 +232,7 @@ class SofascoreService:
                 return parse_player_attributes(data["playerAttributes"])
             return PlayerAttributes()
         except Exception as exc:
+            self.logger.error(f"Failed to get player attributes {player_id}: {str(exc)}")
             raise exc
 
     def get_player_transfer_history(self, player_id: int) -> TransferHistory:
@@ -206,6 +252,7 @@ class SofascoreService:
                 return parse_transfer_history(data)
             return TransferHistory()
         except Exception as exc:
+            self.logger.error(f"Failed to get transfer history for player {player_id}: {str(exc)}")
             raise exc
 
     def get_player_stats(self, player_id: int) -> dict:
@@ -222,6 +269,7 @@ class SofascoreService:
             url = self.endpoints.player_stats_endpoint(player_id)
             return get_json(self.page, url)
         except Exception as exc:
+            self.logger.error(f"Failed to get player stats {player_id}: {str(exc)}")
             raise exc
 
     def get_match_lineups(self, event_id: int) -> Lineups:
@@ -238,6 +286,7 @@ class SofascoreService:
             url = self.endpoints.match_lineups_endpoint(event_id)
             return parse_lineups(get_json(self.page, url))
         except Exception as exc:
+            self.logger.error(f"Failed to get lineups for event {event_id}: {str(exc)}")
             raise exc
 
     def get_match_incidents(self, event_id: int) -> list[Incident]:
@@ -255,6 +304,7 @@ class SofascoreService:
             data = get_json(self.page, url)["incidents"]
             return parse_incidents(data)
         except Exception as exc:
+            self.logger.error(f"Failed to get incidents for event {event_id}: {str(exc)}")
             raise exc
 
     def get_match_top_players(self, event_id: int) -> TopPlayersMatch:
@@ -271,6 +321,7 @@ class SofascoreService:
             url = self.endpoints.match_top_players_endpoint(event_id)
             return parse_top_players_match(get_json(self.page, url))
         except Exception as exc:
+            self.logger.error(f"Failed to get top players for event {event_id}: {str(exc)}")
             raise exc
 
     def get_match_comments(self, event_id: int) -> list[Comment]:
@@ -288,6 +339,7 @@ class SofascoreService:
             data = get_json(self.page, url)["comments"]
             return parse_comments(data)
         except Exception as exc:
+            self.logger.error(f"Failed to get comments for event {event_id}: {str(exc)}")
             raise exc
 
     def get_match_stats(self, event_id: int) -> MatchStats:
@@ -307,6 +359,7 @@ class SofascoreService:
             win_probabilities = get_json(self.page, url).get("winProbability", {})
             return parse_match_stats(data, win_probabilities)
         except Exception as exc:
+            self.logger.error(f"Failed to get stats for event {event_id}: {str(exc)}")
             raise exc
 
     def get_match_shots(self, event_id: int) -> dict:
@@ -326,6 +379,7 @@ class SofascoreService:
                 return parse_shots(data["shotmap"])
             return Shot()
         except Exception as exc:
+            self.logger.error(f"Failed to get shots for event {event_id}: {str(exc)}")
             raise exc
 
     def get_team(self, team_id: int) -> Team:
@@ -343,6 +397,7 @@ class SofascoreService:
             data = get_json(self.page, url)["team"]
             return parse_team(data)
         except Exception as exc:
+            self.logger.error(f"Failed to get team {team_id}: {str(exc)}")
             raise exc
 
     def get_team_players(self, team_id: int) -> list[Player]:
@@ -362,6 +417,7 @@ class SofascoreService:
                 for player in get_json(self.page, url)["players"]
             ]
         except Exception as exc:
+            self.logger.error(f"Failed to get team players for team {team_id}: {str(exc)}")
             raise exc
 
     def get_team_events(self, team_id: int, upcoming: bool, page: int) -> list[Event]:
@@ -383,6 +439,7 @@ class SofascoreService:
                 return parse_events(data["events"])
             return []
         except Exception as exc:
+            self.logger.error(f"Failed to get team events for team {team_id}: {str(exc)}")
             raise exc
 
     def get_tournaments_by_category(self, category_id: Category) -> list[Tournament]:
@@ -402,6 +459,7 @@ class SofascoreService:
             data = get_json(self.page, url)["groups"][0].get("uniqueTournaments", [])
             return parse_tournaments(data)
         except Exception as exc:
+            self.logger.error(f"Failed to get tournaments for category {category_id}: {str(exc)}")
             raise exc
 
     def get_tournament_seasons(self, tournament_id: int) -> list[Season]:
@@ -419,6 +477,7 @@ class SofascoreService:
             data = get_json(self.page, url)["seasons"]
             return parse_seasons(data)
         except Exception as exc:
+            self.logger.error(f"Failed to get seasons for tournament {tournament_id}: {str(exc)}")
             raise exc
 
     def get_tournament_bracket(
@@ -443,6 +502,7 @@ class SofascoreService:
             data = get_json(self.page, url)["cupTrees"]
             return parse_brackets(data)
         except Exception as exc:
+            self.logger.error(f"Failed to get bracket for tournament {tournament_id}: {str(exc)}")
             raise exc
 
     def get_tournament_standings(
@@ -467,6 +527,7 @@ class SofascoreService:
             data = get_json(self.page, url)["standings"]
             return parse_standings(data)
         except Exception as exc:
+            self.logger.error(f"Failed to get standings for tournament {tournament_id}: {str(exc)}")
             raise exc
 
     def get_tournament_top_teams(
@@ -493,6 +554,7 @@ class SofascoreService:
                 return parse_top_tournament_teams(response["topTeams"])
             return TopTournamentTeams()
         except Exception as exc:
+            self.logger.error(f"Failed to get top teams for tournament {tournament_id}: {str(exc)}")
             raise exc
 
     def get_tournament_top_players(
@@ -521,6 +583,7 @@ class SofascoreService:
                 return parse_top_tournament_players(data["topPlayers"])
             return TopTournamentPlayers()
         except Exception as exc:
+            self.logger.error(f"Failed to get top players for tournament {tournament_id}: {str(exc)}")
             raise exc
 
     def get_tournament_events(
@@ -546,6 +609,7 @@ class SofascoreService:
                 return parse_events(get_json(self.page, url)["events"])
             return []
         except Exception as exc:
+            self.logger.error(f"Failed to get events for tournament {tournament_id}: {str(exc)}")
             raise exc
 
     def search(
@@ -590,4 +654,5 @@ class SofascoreService:
             parser = specific_parsers.get(entity, lambda x: x)
             return [parser(result.get("entity")) for result in results]
         except Exception as exc:
+            self.logger.error(f"Failed to search for '{query}': {str(exc)}")
             raise exc
