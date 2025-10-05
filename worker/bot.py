@@ -9,7 +9,6 @@ from firebase_admin import credentials, firestore
 import esd 
 
 # --- GLOBAL VARIABLES ---
-# These are declared globally but initialized by initialize_bot_services()
 SOFASCORE_CLIENT = None 
 firebase_manager = None 
 
@@ -198,7 +197,8 @@ def initialize_sofascore_client():
 
     logger.info("Attempting to initialize Sofascore client...")
     try:
-        SOFASCORE_CLIENT = esd.SofascoreClient()
+        # 🔑 FIX: Access the client via its submodule path to resolve AttributeError
+        SOFASCORE_CLIENT = esd.sofascore.SofascoreClient() 
         logger.info("Sofascore client successfully initialized.")
         return True
     except Exception as e:
@@ -556,5 +556,5 @@ def run_bot_once():
     logger.info("Bot cycle completed.")
 
 # -----------------------------------------------------------
-# 🚨 IMPORTANT: NO 'if __name__ == "__main__":' BLOCK HERE!
+# Note: NO 'if __name__ == "__main__":' BLOCK in bot.py
 # -----------------------------------------------------------
