@@ -9,6 +9,7 @@ from bot import run_bot_once, SLEEP_TIME, initialize_bot_services
 
 # Use a separate logger for the executor
 logger = logging.getLogger("MainExecutor")
+# Set level for console output
 logger.setLevel(logging.INFO)
 
 # Use the interval defined in the bot logic file
@@ -17,21 +18,22 @@ CHECK_INTERVAL = SLEEP_TIME
 def main():
     print("🚀 Football Betting Bot Executor Started")
     
-    # 1. CRITICAL STEP: ONE-TIME SERVICE INITIALIZATION
-    # This must be done before the while loop!
+    # 1. ONE-TIME SERVICE INITIALIZATION (CRITICAL)
     if not initialize_bot_services():
-        # This block executes if Firebase or Sofascore failed to set up.
-        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ❌ FATAL: Bot services failed to initialize. Check bot.log for details. Exiting.")
-        sys.exit(1) 
+        # Initialization function logs the error internally.
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ❌ FATAL: Bot services failed to initialize. Check bot.log. Exiting.")
+        sys.exit(1) # Exit immediately if initialization fails
     
     # 2. MAIN EXECUTION LOOP
     while True:
         try:
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 🤖 Starting bot cycle...")
+            # Call the core logic function from bot.py
             run_bot_once()
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ✅ Cycle complete.")
             
         except Exception as e:
+            # Catch unexpected errors during the cycle that run_bot_once didn't handle
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ⚠️ UNEXPECTED CRITICAL ERROR in main loop: {e}")
             logger.critical(f"Unexpected error in cycle: {e}", exc_info=True)
             
