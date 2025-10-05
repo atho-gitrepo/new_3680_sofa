@@ -12,17 +12,17 @@ any of the sources used to extract data.
 """
 
 from .sofascore import SofascoreClient, types as SofascoreTypes
-from .promiedos import PromiedosClient, types as PromiedosTypes
-from .fbref import FBrefClient, types as FBrefTypes
+#from .promiedos import PromiedosClient, types as PromiedosTypes
+#from .fbref import FBrefClient, types as FBrefTypes
 
 
 __all__ = [
     "SofascoreClient",
     "SofascoreTypes",
-    "PromiedosClient",
-    "PromiedosTypes",
-    "FBrefClient",
-    "FBrefTypes",
+    #"PromiedosClient",
+    #"PromiedosTypes",
+    #"FBrefClient",
+    #"FBrefTypes",
 ]
 
 __version__ = "0.0.8"
