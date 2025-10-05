@@ -197,8 +197,10 @@ def initialize_sofascore_client():
 
     logger.info("Attempting to initialize Sofascore client...")
     try:
-        # 🔑 FIX: Access the client via its submodule path to resolve AttributeError
-        SOFASCORE_CLIENT = esd.sofascore.SofascoreClient() 
+        # 🔑 FIX: Initialize without browser path for Railway compatibility
+        SOFASCORE_CLIENT = esd.sofascore.SofascoreClient()
+        # 🔑 FIX: Explicitly initialize the client
+        SOFASCORE_CLIENT.initialize()
         logger.info("Sofascore client successfully initialized.")
         return True
     except Exception as e:
@@ -284,7 +286,7 @@ def get_finished_match_details(fixture_id):
     try:
         match_list = SOFASCORE_CLIENT.search(
             str(fixture_id), 
-            entity=esd.SofascoreTypes.EntityType.EVENT
+            entity=esd.sofascore.EntityType.EVENT  # 🔑 FIX: Use the correct import path
         )
         
         for match in match_list:
