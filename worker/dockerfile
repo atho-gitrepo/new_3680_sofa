@@ -1,0 +1,31 @@
+# Use a Python base image
+FROM python:3.12-slim
+
+# Set the working directory
+WORKDIR /app
+
+# Install the system dependencies required by Playwright browsers (CRITICAL STEP)
+# The packages below are common for debian-based images (like python:slim)
+RUN apt-get update \
+    && apt-get install -y \
+    libnss3 \
+    libfontconfig \
+    libgbm1 \
+    libasound2 \
+    curl \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Playwright browser binaries
+# This command runs successfully ONLY after the system dependencies (above) are installed.
+RUN playwright install
+
+# Copy your application code
+COPY . .
+
+# Set the entry point to run your main script
+CMD ["python", "worker/main.py"] 
