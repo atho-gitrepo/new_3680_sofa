@@ -1,3 +1,5 @@
+# bot.py
+
 import requests
 import os
 import json
@@ -6,7 +8,8 @@ import logging
 from datetime import datetime, timedelta
 import firebase_admin
 from firebase_admin import credentials, firestore
-import esd 
+# Correct import structure for your local library
+from esd.sofascore import SofascoreClient, EntityType 
 
 # --- GLOBAL VARIABLES ---
 SOFASCORE_CLIENT = None 
@@ -48,6 +51,7 @@ BET_SCORES_80_MINUTE = ['3-1','2-0']
 # =========================================================
 
 class FirebaseManager:
+    # ... (Keep the FirebaseManager class exactly as provided) ...
     """Manages all interactions with the Firebase Firestore database."""
     def __init__(self, credentials_json_string):
         self.db = None
@@ -197,10 +201,10 @@ def initialize_sofascore_client():
 
     logger.info("Attempting to initialize Sofascore client...")
     try:
-        # 🔑 FIX: Initialize without browser path for Railway compatibility
-        SOFASCORE_CLIENT = esd.sofascore.SofascoreClient()
-        # 🔑 FIX: Explicitly initialize the client
-        SOFASCORE_CLIENT.initialize()
+        # Initialize the client. This launches the Playwright browser.
+        SOFASCORE_CLIENT = SofascoreClient()
+        # Explicitly initialize the client (as defined in your client.py)
+        SOFASCORE_CLIENT.initialize() 
         logger.info("Sofascore client successfully initialized.")
         return True
     except Exception as e:
@@ -233,12 +237,24 @@ def initialize_bot_services():
     logger.info("All bot services initialized successfully.")
     send_telegram("🚀 Football Betting Bot Initialized Successfully! Starting monitoring.")
     return True
+    
+def shutdown_bot():
+    """
+    MODIFICATION: Closes the Sofascore client resources gracefully. 
+    Crucial for Playwright stability.
+    """
+    global SOFASCORE_CLIENT
+    if SOFASCORE_CLIENT:
+        SOFASCORE_CLIENT.close()
+        logger.info("Sofascore Client resources closed.")
+
 
 # =========================================================
-# 🏃 CORE LOGIC FUNCTIONS
+# 🏃 CORE LOGIC FUNCTIONS (Remaining functions are unchanged)
 # =========================================================
 
 def send_telegram(msg, max_retries=3):
+    # ... (remains the same) ...
     """Send Telegram message with retry mechanism"""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         logger.warning(f"Telegram credentials missing. Message not sent: {msg}")
@@ -286,7 +302,7 @@ def get_finished_match_details(fixture_id):
     try:
         match_list = SOFASCORE_CLIENT.search(
             str(fixture_id), 
-            entity=esd.sofascore.EntityType.EVENT  # 🔑 FIX: Use the correct import path
+            entity=EntityType.EVENT  # Corrected EntityType reference
         )
         
         for match in match_list:
@@ -299,6 +315,7 @@ def get_finished_match_details(fixture_id):
         return None
 
 def place_regular_bet(state, fixture_id, score, match_info):
+    # ... (remains the same) ...
     """Handles placing the initial 36' bet."""
     if score in ['1-1', '2-2', '3-3']:
         state['36_bet_placed'] = True
@@ -321,6 +338,7 @@ def place_regular_bet(state, fixture_id, score, match_info):
         firebase_manager.update_tracked_match(fixture_id, state)
 
 def place_32_over_bet(state, fixture_id, score, match_info):
+    # ... (remains the same) ...
     """Handles placing the 32' over bet if score is 0-1 or 1-0."""
     
     qualifying_scores = ['0-1', '1-0']
@@ -347,6 +365,7 @@ def place_32_over_bet(state, fixture_id, score, match_info):
         firebase_manager.update_tracked_match(fixture_id, state)
 
 def check_ht_result(state, fixture_id, score, match_info):
+    # ... (remains the same) ...
     """Checks the result of all placed bets at halftime, skipping 32' over bets."""
     
     current_score = score
@@ -390,6 +409,7 @@ def check_ht_result(state, fixture_id, score, match_info):
         firebase_manager.delete_tracked_match(fixture_id)
 
 def place_80_minute_bet(state, fixture_id, score, match_info):
+    # ... (remains the same) ...
     """Handles placing the new 80' bet."""
     if score in BET_SCORES_80_MINUTE:
         state['80_bet_placed'] = True
@@ -412,6 +432,7 @@ def place_80_minute_bet(state, fixture_id, score, match_info):
         firebase_manager.update_tracked_match(fixture_id, state)
 
 def process_live_match(match):
+    # ... (remains the same) ...
     """
     Processes a single live match using the Sofascore object structure.
     """
@@ -466,6 +487,7 @@ def process_live_match(match):
 
 
 def check_and_resolve_stale_bets():
+    # ... (remains the same) ...
     """
     Checks and resolves old, unresolved bets by fetching their final status.
     """
@@ -539,9 +561,9 @@ def check_and_resolve_stale_bets():
 
     if successful_api_call:
         firebase_manager.update_last_api_call()
-
-def run_bot_once():
-    """Run one complete cycle of the bot"""
+        
+def run_bot_cycle():
+    """MODIFICATION: Run one complete cycle of the bot (renamed from run_bot_once)"""
     logger.info("Starting bot cycle...")
     
     if not SOFASCORE_CLIENT or not firebase_manager or not firebase_manager.db:
@@ -556,7 +578,6 @@ def run_bot_once():
     check_and_resolve_stale_bets()
     
     logger.info("Bot cycle completed.")
-
 # -----------------------------------------------------------
 # Note: NO 'if __name__ == "__main__":' BLOCK in bot.py
 # -----------------------------------------------------------
