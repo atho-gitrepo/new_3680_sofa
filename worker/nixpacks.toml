@@ -7,7 +7,8 @@ cmds = [
 [phases.install]
 cmds = [
     "pip install -r requirements.txt",
-    "playwright install chromium",
+    "playwright install --force chromium",
+    "playwright install-deps",
 ]
 
 [start]
