@@ -6,6 +6,33 @@ from __future__ import annotations
 import playwright
 import os
 import logging
+import subprocess
+import sys
+
+# Add browser installation check
+def install_playwright_browsers():
+    """Install Playwright browsers if missing"""
+    logger = logging.getLogger(__name__)
+    try:
+        logger.info("Checking Playwright browser installation...")
+        # Try to install browsers
+        result = subprocess.run([
+            sys.executable, "-m", "playwright", "install", "chromium", "--force"
+        ], capture_output=True, text=True, timeout=300)
+        
+        if result.returncode == 0:
+            logger.info("Playwright browsers installed successfully")
+            return True
+        else:
+            logger.error(f"Browser installation failed: {result.stderr}")
+            return False
+    except Exception as e:
+        logger.error(f"Browser installation error: {e}")
+        return False
+
+# Install browsers before anything else
+install_playwright_browsers()
+
 from ..utils import get_json, get_today
 from .endpoints import SofascoreEndpoints
 from .types import (
@@ -112,6 +139,13 @@ class SofascoreService:
                 
             except Exception as exc:
                 self.logger.error(f"Playwright initialization failed (attempt {attempt + 1}): {str(exc)}")
+                
+                # Try to install browsers if they're missing
+                if "Executable doesn't exist" in str(exc) and attempt == 0:
+                    self.logger.info("Attempting to install missing browsers...")
+                    install_playwright_browsers()
+                    continue
+                    
                 # Clean up on failure
                 if self.playwright:
                     self.playwright.stop()
