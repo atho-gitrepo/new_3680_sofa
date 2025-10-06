@@ -51,7 +51,6 @@ BET_SCORES_80_MINUTE = ['3-1','2-0']
 # =========================================================
 
 class FirebaseManager:
-    # ... (Keep the FirebaseManager class exactly as provided) ...
     """Manages all interactions with the Firebase Firestore database."""
     def __init__(self, credentials_json_string):
         self.db = None
@@ -239,10 +238,7 @@ def initialize_bot_services():
     return True
     
 def shutdown_bot():
-    """
-    MODIFICATION: Closes the Sofascore client resources gracefully. 
-    Crucial for Playwright stability.
-    """
+    """Closes the Sofascore client resources gracefully. Crucial for Playwright stability."""
     global SOFASCORE_CLIENT
     if SOFASCORE_CLIENT:
         SOFASCORE_CLIENT.close()
@@ -250,11 +246,10 @@ def shutdown_bot():
 
 
 # =========================================================
-# 🏃 CORE LOGIC FUNCTIONS (Remaining functions are unchanged)
+# 🏃 CORE LOGIC FUNCTIONS
 # =========================================================
 
 def send_telegram(msg, max_retries=3):
-    # ... (remains the same) ...
     """Send Telegram message with retry mechanism"""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         logger.warning(f"Telegram credentials missing. Message not sent: {msg}")
@@ -315,7 +310,6 @@ def get_finished_match_details(fixture_id):
         return None
 
 def place_regular_bet(state, fixture_id, score, match_info):
-    # ... (remains the same) ...
     """Handles placing the initial 36' bet."""
     if score in ['1-1', '2-2', '3-3']:
         state['36_bet_placed'] = True
@@ -332,13 +326,21 @@ def place_regular_bet(state, fixture_id, score, match_info):
             'fixture_id': fixture_id
         }
         firebase_manager.add_unresolved_bet(fixture_id, unresolved_data)
-        send_telegram(f"⏱️ 36' - {match_info['match_name']}\n🏆 {match_info['league_name']} ({match_info['country']})\n🔢 Score: {score}\n🎯 Correct Score Bet Placed for Half Time")
+        
+        # 🟢 UPDATED TEMPLATE
+        message = (
+            f"⏱️ 36' - {match_info['match_name']}\n"
+            f"🌍 {match_info['country']}\n"
+            f"🏆 {match_info['league_name']}\n"
+            f"🔢 Score: {score}\n"
+            f"🎯 Correct Score Bet Placed for Half Time"
+        )
+        send_telegram(message)
     else:
         state['36_bet_placed'] = True
         firebase_manager.update_tracked_match(fixture_id, state)
 
 def place_32_over_bet(state, fixture_id, score, match_info):
-    # ... (remains the same) ...
     """Handles placing the 32' over bet if score is 0-1 or 1-0."""
     
     qualifying_scores = ['0-1', '1-0']
@@ -359,13 +361,21 @@ def place_32_over_bet(state, fixture_id, score, match_info):
             'fixture_id': fixture_id
         }
         firebase_manager.add_unresolved_bet(fixture_id, unresolved_data)
-        send_telegram(f"⏱️ 32' - {match_info['match_name']}\n🏆 {match_info['league_name']} ({match_info['country']})\n🔢 Score: {score}\n🎯 Bet Placed: Total Goals **Over {over_line}**for Full Time")
+        
+        # 🟢 UPDATED TEMPLATE
+        telegram_message = (
+            f"⏱️ 32' - {match_info['match_name']}\n"
+            f"🌍 {match_info['country']}\n"
+            f"🏆 {match_info['league_name']}\n"
+            f"🔢 Score: {score}\n"
+            f"🎯 Bet Placed: Total Goals **Over {over_line}**for Full Time"
+        )
+        send_telegram(telegram_message)
     else:
         state['32_bet_placed'] = True
         firebase_manager.update_tracked_match(fixture_id, state)
 
 def check_ht_result(state, fixture_id, score, match_info):
-    # ... (remains the same) ...
     """Checks the result of all placed bets at halftime, skipping 32' over bets."""
     
     current_score = score
@@ -376,6 +386,8 @@ def check_ht_result(state, fixture_id, score, match_info):
         outcome = None
         message = ""
 
+        country_name = unresolved_bet_data.get('country', 'N/A') # Get country from Firebase data
+        
         if bet_type == BET_TYPE_REGULAR:
             bet_score = unresolved_bet_data.get('36_score', 'N/A')
             outcome = 'win' if current_score == bet_score else 'loss'
@@ -383,7 +395,8 @@ def check_ht_result(state, fixture_id, score, match_info):
             if outcome == 'win':
                 message = (
                     f"✅ HT Result: {match_info['match_name']}\n"
-                    f"🏆 {match_info['league_name']} ({match_info['country']})\n"
+                    f"🌍 {country_name}\n"
+                    f"🏆 {match_info['league_name']}\n"
                     f"🔢 HT Score: **{current_score}**\n"
                     f"🎯 Bet Score: **{bet_score}**\n"
                     f"🎉 36' Bet WON"
@@ -391,7 +404,8 @@ def check_ht_result(state, fixture_id, score, match_info):
             else:
                 message = (
                     f"❌ HT Result: {match_info['match_name']}\n"
-                    f"🏆 {match_info['league_name']} ({match_info['country']})\n"
+                    f"🌍 {country_name}\n"
+                    f"🏆 {match_info['league_name']}\n"
                     f"🔢 HT Score: **{current_score}**\n"
                     f"🎯 Bet Score: **{bet_score}**\n"
                     f"🔁 36' Bet LOST"
@@ -409,7 +423,6 @@ def check_ht_result(state, fixture_id, score, match_info):
         firebase_manager.delete_tracked_match(fixture_id)
 
 def place_80_minute_bet(state, fixture_id, score, match_info):
-    # ... (remains the same) ...
     """Handles placing the new 80' bet."""
     if score in BET_SCORES_80_MINUTE:
         state['80_bet_placed'] = True
@@ -426,13 +439,21 @@ def place_80_minute_bet(state, fixture_id, score, match_info):
             'fixture_id': fixture_id
         }
         firebase_manager.add_unresolved_bet(fixture_id, unresolved_data)
-        send_telegram(f"⏱️ 80' - {match_info['match_name']}\n🏆 {match_info['league_name']} ({match_info['country']})\n🔢 Score: {score}\n🎯 80' Correct Score Bet Placed for Full Time")
+        
+        # 🟢 UPDATED TEMPLATE
+        message = (
+            f"⏱️ 80' - {match_info['match_name']}\n"
+            f"🌍 {match_info['country']}\n"
+            f"🏆 {match_info['league_name']}\n"
+            f"🔢 Score: {score}\n"
+            f"🎯 80' Correct Score Bet Placed for Full Time"
+        )
+        send_telegram(message)
     else:
         state['80_bet_placed'] = True
         firebase_manager.update_tracked_match(fixture_id, state)
 
 def process_live_match(match):
-    # ... (remains the same) ...
     """
     Processes a single live match using the Sofascore object structure.
     """
@@ -466,7 +487,8 @@ def process_live_match(match):
     match_info = {
         'match_name': match_name,
         'league_name': match.tournament.name if hasattr(match, 'tournament') else 'N/A',
-        'country': match.tournament.category.name if hasattr(match, 'tournament') and hasattr(match.tournament, 'category') else 'N/A',
+        # Correctly extracting the country name (category)
+        'country': match.tournament.category.name if hasattr(match, 'tournament') and hasattr(match.tournament, 'category') else 'N/A', 
         'league_id': match.tournament.id if hasattr(match, 'tournament') else 'N/A'
     }
         
@@ -487,7 +509,6 @@ def process_live_match(match):
 
 
 def check_and_resolve_stale_bets():
-    # ... (remains the same) ...
     """
     Checks and resolves old, unresolved bets by fetching their final status.
     """
@@ -527,13 +548,22 @@ def check_and_resolve_stale_bets():
             final_score = f"{match_data.home_score.current or 0}-{match_data.away_score.current or 0}"
             match_name = bet_info.get('match_name', f"Match {match_id}")
             bet_type = bet_info.get('bet_type', 'unknown')
+            country_name = bet_info.get('country', 'N/A') # Get country from Firebase data
             outcome = None
             message = ""
 
             if bet_type == BET_TYPE_80_MINUTE:
                 bet_score = bet_info.get('80_score')
                 outcome = 'win' if final_score == bet_score else 'loss'
-                message = f"🏁 FINAL RESULT - 80' Bet\n⚽ {match_name}\n🔢 Final Score: {final_score}\n🎯 Bet on 80' Score: {bet_score}\n📊 Outcome: {'✅ WON' if outcome == 'win' else '❌ LOST'}"
+                # 🟢 UPDATED TEMPLATE
+                message = (
+                    f"🏁 FINAL RESULT - 80' Bet\n"
+                    f"⚽ {match_name}\n"
+                    f"🌍 {country_name}\n"
+                    f"🔢 Final Score: {final_score}\n"
+                    f"🎯 Bet on 80' Score: {bet_score}\n"
+                    f"📊 Outcome: {'✅ WON' if outcome == 'win' else '❌ LOST'}"
+                )
 
             elif bet_type == BET_TYPE_32_OVER:
                 over_line = bet_info.get('over_line')
@@ -545,7 +575,15 @@ def check_and_resolve_stale_bets():
                     elif total_goals < over_line: outcome = 'loss'
                     else: outcome = 'push'
                         
-                    message = f"🏁 FINAL RESULT - 32' Over Bet\n⚽ {match_name}\n🔢 Final Score: {final_score}\n🎯 Bet: Over {over_line}\n📊 Outcome: {'✅ WON' if outcome == 'win' else '❌ LOST' if outcome == 'loss' else '➖ PUSH'}"
+                    # 🟢 UPDATED TEMPLATE
+                    message = (
+                        f"🏁 FINAL RESULT - 32' Over Bet\n"
+                        f"⚽ {match_name}\n"
+                        f"🌍 {country_name}\n"
+                        f"🔢 Final Score: {final_score}\n"
+                        f"🎯 Bet: Over {over_line}\n"
+                        f"📊 Outcome: {'✅ WON' if outcome == 'win' else '❌ LOST' if outcome == 'loss' else '➖ PUSH'}"
+                    )
                 except ValueError:
                     outcome = 'error'
                     message = f"⚠️ FINAL RESULT: {match_name}\n❌ Bet could not be resolved due to score format issue."
@@ -563,7 +601,7 @@ def check_and_resolve_stale_bets():
         firebase_manager.update_last_api_call()
         
 def run_bot_cycle():
-    """MODIFICATION: Run one complete cycle of the bot (renamed from run_bot_once)"""
+    """Run one complete cycle of the bot"""
     logger.info("Starting bot cycle...")
     
     if not SOFASCORE_CLIENT or not firebase_manager or not firebase_manager.db:
