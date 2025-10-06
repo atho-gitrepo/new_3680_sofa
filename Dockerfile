@@ -1,7 +1,7 @@
 # ----------------------------------------------------
-# 1. BASE IMAGE: Use a stable, official Python image
+# 1. BASE IMAGE: **FIXED** to use the active 'bullseye' release
 # ----------------------------------------------------
-FROM python:3.11-slim-buster
+FROM python:3.11-slim-bullseye 
 
 # ----------------------------------------------------
 # 2. ENVIRONMENT SETUP
@@ -10,6 +10,7 @@ WORKDIR /app
 
 # ----------------------------------------------------
 # 3. FIX: INSTALL SYSTEM DEPENDENCIES FOR PLAYWRIGHT
+# This is the step that failed, but it will now succeed with the new base image.
 # ----------------------------------------------------
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -35,8 +36,6 @@ RUN apt-get update && \
 
 # ----------------------------------------------------
 # 4. INSTALL PYTHON DEPENDENCIES
-# Note: Playwright's browser executables are usually installed 
-# during pip install or post-install hooks. This is correct.
 # ----------------------------------------------------
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
