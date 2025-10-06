@@ -1,3 +1,5 @@
+# esd/sofascore/endpoints.py
+
 """
 This module contains the endpoints of the SofaScore API.
 """
@@ -32,6 +34,7 @@ class SofascoreEndpoints:
         return self.base_url + "/sport/football/events/live"
 
     def event_endpoint(self, event_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the event information.
 
@@ -44,6 +47,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/event/{event_id}"
 
     def search_endpoint(self, query: str, entity_type: str) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to search for entities.
 
@@ -57,6 +61,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/search/{entity_type}?q={query}&page=0"
 
     def player_endpoint(self, player_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the player information.
 
@@ -69,6 +74,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/player/{player_id}"
 
     def player_transfer_history_endpoint(self, player_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the player transfer history.
 
@@ -81,6 +87,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/player/{player_id}/transfer-history"
 
     def player_charac_endpoint(self, player_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the player characteristics.
 
@@ -93,6 +100,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/player/{player_id}/characteristics"
 
     def player_attributes_endpoint(self, player_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the player attributes.
 
@@ -105,6 +113,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/player/{player_id}/attribute-overviews"
 
     def player_stats_endpoint(self, player_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the player statistics.
 
@@ -117,6 +126,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/player/{player_id}/statistics"
 
     def team_endpoint(self, team_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the team information.
 
@@ -129,6 +139,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/team/{team_id}"
 
     def team_players_endpoint(self, team_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the team players.
 
@@ -141,6 +152,7 @@ class SofascoreEndpoints:
         return self.team_endpoint(team_id) + "/players"
 
     def team_events_endpoint(self, team_id: int, upcoming: bool, page: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the team events.
 
@@ -156,6 +168,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/team/{team_id}/events/{_from}/{page}"
 
     def match_stats_endpoint(self, event_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the match statistics.
 
@@ -168,6 +181,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/event/{event_id}/statistics"
 
     def match_events_endpoint(self, event_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the match events.
 
@@ -180,6 +194,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/event/{event_id}/incidents"
 
     def match_top_players_endpoint(self, event_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the top players of a match.
 
@@ -192,6 +207,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/event/{event_id}/best-players/summary"
 
     def match_comments_endpoint(self, event_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the comments of a match.
 
@@ -204,6 +220,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/event/{event_id}/comments"
 
     def match_shots_endpoint(self, event_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the shots of a match.
 
@@ -216,6 +233,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/event/{event_id}/shotmap"
 
     def match_probabilities_endpoint(self, event_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the match probabilities.
 
@@ -228,6 +246,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/event/{event_id}/win-probability"
 
     def match_lineups_endpoint(self, event_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the match lineups.
 
@@ -240,6 +259,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/event/{event_id}/lineups"
 
     def tournaments_endpoint(self, category_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the tournaments of a category.
 
@@ -252,6 +272,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/category/{category_id}/unique-tournaments"
 
     def tournament_seasons_endpoint(self, tournament_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the seasons of a tournament.
 
@@ -264,6 +285,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/unique-tournament/{tournament_id}/seasons"
 
     def tournament_bracket_endpoint(self, tournament_id: int, season_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the bracket of a tournament.
 
@@ -277,6 +299,7 @@ class SofascoreEndpoints:
         return f"{self.base_url}/unique-tournament/{tournament_id}/season/{season_id}/cuptrees"
 
     def tournament_standings_endpoint(self, tournament_id: int, season_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the standings of a tournament.
 
@@ -291,6 +314,7 @@ class SofascoreEndpoints:
         return f"{base}/{tournament_id}/season/{season_id}/standings/total"
 
     def tournament_topteams_endpoint(self, tournament_id: int, season_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the top teams of a tournament.
 
@@ -305,6 +329,7 @@ class SofascoreEndpoints:
         return f"{base}/{tournament_id}/season/{season_id}/top-teams/overall"
 
     def tournament_topplayers_endpoint(self, tournament_id: int, season_id: int) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the top players of a tournament.
 
@@ -321,6 +346,7 @@ class SofascoreEndpoints:
     def tournament_events_endpoint(
         self, tournament_id: int, season_id: int, upcoming: bool, page: int
     ) -> str:
+        # ... (remains the same) ...
         """
         Returns the URL of the endpoint to get the events of a tournament.
 
