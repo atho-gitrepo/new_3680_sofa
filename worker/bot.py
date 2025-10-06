@@ -33,7 +33,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 FIREBASE_CREDENTIALS_JSON_STRING = os.getenv("FIREBASE_CREDENTIALS_JSON")
 
 # --- CONSTANTS ---
-SLEEP_TIME = 60
+SLEEP_TIME = 90
 FIXTURE_API_INTERVAL = 900
 MINUTES_REGULAR_BET = [35, 36, 37]
 MINUTES_32_MINUTE_BET = [31, 32, 33]
@@ -45,6 +45,7 @@ STATUS_LIVE = ['LIVE', '1H', '2H', 'ET', 'P']
 STATUS_HALFTIME = 'HT'
 STATUS_FINISHED = ['FT', 'AET', 'PEN'] 
 BET_SCORES_80_MINUTE = ['3-1','2-0']
+MAX_FETCH_RETRIES = 3 # New constant for retries
 
 # =========================================================
 # 📌 INITIALIZATION FUNCTIONS
@@ -192,17 +193,18 @@ class FirebaseManager:
 
 
 def initialize_sofascore_client():
-    """Initializes and sets the global SOFASCORE_CLIENT object."""
+    """
+    Initializes and sets the global SOFASCORE_CLIENT object.
+    """
     global SOFASCORE_CLIENT
     
     if SOFASCORE_CLIENT is not None:
+        logger.info("Sofascore client already initialized.")
         return True 
 
     logger.info("Attempting to initialize Sofascore client...")
     try:
-        # Initialize the client. This launches the Playwright browser.
         SOFASCORE_CLIENT = SofascoreClient()
-        # Explicitly initialize the client (as defined in your client.py)
         SOFASCORE_CLIENT.initialize() 
         logger.info("Sofascore client successfully initialized.")
         return True
@@ -243,7 +245,6 @@ def shutdown_bot():
     if SOFASCORE_CLIENT:
         SOFASCORE_CLIENT.close()
         logger.info("Sofascore Client resources closed.")
-
 
 # =========================================================
 # 🏃 CORE LOGIC FUNCTIONS
@@ -288,7 +289,8 @@ def get_live_matches():
 
 def get_finished_match_details(fixture_id):
     """
-    Fetches the full event details for a match ID, used primarily for finished matches.
+    Fetches the full event details for a match ID using the active Sofascore client.
+    This is the core, single-attempt fetch function.
     """
     if not SOFASCORE_CLIENT: 
         logger.error("Sofascore client is not initialized.")
@@ -297,17 +299,54 @@ def get_finished_match_details(fixture_id):
     try:
         match_list = SOFASCORE_CLIENT.search(
             str(fixture_id), 
-            entity=EntityType.EVENT  # Corrected EntityType reference
+            entity=EntityType.EVENT
         )
         
         for match in match_list:
             if match.id == int(fixture_id):
                 return match
         
+        # This could indicate a data not found issue, not a connection issue.
+        logger.warning(f"Search for fixture {fixture_id} returned no matching event ID.")
         return None
     except Exception as e:
-        logger.error(f"Error fetching finished match details for {fixture_id}: {e}")
+        # Catch any Playwright/Network error from the underlying service.
+        logger.error(f"Sofascore Client Search Error for {fixture_id}: {e}")
         return None
+
+def robust_get_finished_match_details(fixture_id):
+    """
+    Wrapper to attempt fetching match details with retries and client refresh on persistent failure.
+    """
+    global SOFASCORE_CLIENT
+    
+    for attempt in range(MAX_FETCH_RETRIES):
+        result = get_finished_match_details(fixture_id)
+        if result:
+            if attempt > 0:
+                logger.info(f"Successfully fetched {fixture_id} on attempt {attempt + 1}.")
+            return result
+        
+        # If it's the last attempt and we still failed, try a full client restart
+        if attempt == MAX_FETCH_RETRIES - 1:
+            logger.error(f"Permanent failure fetching {fixture_id} after {MAX_FETCH_RETRIES} attempts. Attempting full client restart.")
+            try:
+                if SOFASCORE_CLIENT:
+                    SOFASCORE_CLIENT.close()
+                initialize_sofascore_client()
+                # Try one last time after restart
+                final_result = get_finished_match_details(fixture_id)
+                if final_result:
+                    logger.info(f"Successfully fetched {fixture_id} after client restart.")
+                    return final_result
+            except Exception as e:
+                logger.critical(f"FATAL: Client restart failed for {fixture_id}: {e}")
+            
+        
+        logger.warning(f"Failed to fetch final data for fixture {fixture_id}. Retrying in {2 ** attempt}s (Attempt {attempt + 1}/{MAX_FETCH_RETRIES}).")
+        time.sleep(2 ** attempt)
+        
+    return None
 
 def place_regular_bet(state, fixture_id, score, match_info):
     """Handles placing the initial 36' bet."""
@@ -327,7 +366,7 @@ def place_regular_bet(state, fixture_id, score, match_info):
         }
         firebase_manager.add_unresolved_bet(fixture_id, unresolved_data)
         
-        # 🟢 UPDATED TEMPLATE
+        # 🟢 UPDATED TEMPLATE with country
         message = (
             f"⏱️ 36' - {match_info['match_name']}\n"
             f"🌍 {match_info['country']}\n"
@@ -362,7 +401,7 @@ def place_32_over_bet(state, fixture_id, score, match_info):
         }
         firebase_manager.add_unresolved_bet(fixture_id, unresolved_data)
         
-        # 🟢 UPDATED TEMPLATE
+        # 🟢 UPDATED TEMPLATE with country
         telegram_message = (
             f"⏱️ 32' - {match_info['match_name']}\n"
             f"🌍 {match_info['country']}\n"
@@ -393,6 +432,7 @@ def check_ht_result(state, fixture_id, score, match_info):
             outcome = 'win' if current_score == bet_score else 'loss'
             
             if outcome == 'win':
+                # 🟢 UPDATED TEMPLATE with country
                 message = (
                     f"✅ HT Result: {match_info['match_name']}\n"
                     f"🌍 {country_name}\n"
@@ -402,6 +442,7 @@ def check_ht_result(state, fixture_id, score, match_info):
                     f"🎉 36' Bet WON"
                 )
             else:
+                # 🟢 UPDATED TEMPLATE with country
                 message = (
                     f"❌ HT Result: {match_info['match_name']}\n"
                     f"🌍 {country_name}\n"
@@ -440,7 +481,7 @@ def place_80_minute_bet(state, fixture_id, score, match_info):
         }
         firebase_manager.add_unresolved_bet(fixture_id, unresolved_data)
         
-        # 🟢 UPDATED TEMPLATE
+        # 🟢 UPDATED TEMPLATE with country
         message = (
             f"⏱️ 80' - {match_info['match_name']}\n"
             f"🌍 {match_info['country']}\n"
@@ -511,6 +552,7 @@ def process_live_match(match):
 def check_and_resolve_stale_bets():
     """
     Checks and resolves old, unresolved bets by fetching their final status.
+    Uses the robust fetching wrapper for resilience.
     """
     stale_bets = firebase_manager.get_stale_unresolved_bets()
     if not stale_bets:
@@ -534,7 +576,8 @@ def check_and_resolve_stale_bets():
     successful_api_call = False
     
     for match_id, bet_info in stale_bets.items():
-        match_data = get_finished_match_details(match_id)
+        # *** CHANGED: Use the robust function here ***
+        match_data = robust_get_finished_match_details(match_id)
         
         if not match_data:
             logger.warning(f"Failed to fetch final data for fixture {match_id}. Will retry on next interval.")
@@ -555,7 +598,7 @@ def check_and_resolve_stale_bets():
             if bet_type == BET_TYPE_80_MINUTE:
                 bet_score = bet_info.get('80_score')
                 outcome = 'win' if final_score == bet_score else 'loss'
-                # 🟢 UPDATED TEMPLATE
+                # 🟢 UPDATED TEMPLATE with country
                 message = (
                     f"🏁 FINAL RESULT - 80' Bet\n"
                     f"⚽ {match_name}\n"
@@ -575,7 +618,7 @@ def check_and_resolve_stale_bets():
                     elif total_goals < over_line: outcome = 'loss'
                     else: outcome = 'push'
                         
-                    # 🟢 UPDATED TEMPLATE
+                    # 🟢 UPDATED TEMPLATE with country
                     message = (
                         f"🏁 FINAL RESULT - 32' Over Bet\n"
                         f"⚽ {match_name}\n"
