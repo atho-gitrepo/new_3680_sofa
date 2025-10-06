@@ -194,17 +194,22 @@ class FirebaseManager:
 
 def initialize_sofascore_client():
     """
-    Initializes and sets the global SOFASCORE_CLIENT object.
+    Initializes and sets the global SOFASCORE_CLIENT object, 
+    ensuring a fresh instance is created if needed.
     """
     global SOFASCORE_CLIENT
     
-    if SOFASCORE_CLIENT is not None:
+    # If client exists and is marked as initialized (by an internal flag, if possible), skip.
+    # We rely on the client's internal state to prevent re-initialization.
+    if SOFASCORE_CLIENT is not None: 
         logger.info("Sofascore client already initialized.")
         return True 
 
     logger.info("Attempting to initialize Sofascore client...")
     try:
+        # Initialize the client. This will launch Playwright/setup API client.
         SOFASCORE_CLIENT = SofascoreClient()
+        # Call the explicit initialization if it's not done in __init__
         SOFASCORE_CLIENT.initialize() 
         logger.info("Sofascore client successfully initialized.")
         return True
@@ -317,6 +322,7 @@ def get_finished_match_details(fixture_id):
 def robust_get_finished_match_details(fixture_id):
     """
     Wrapper to attempt fetching match details with retries and client refresh on persistent failure.
+    (This is the function we made robust against transient errors.)
     """
     global SOFASCORE_CLIENT
     
@@ -333,6 +339,7 @@ def robust_get_finished_match_details(fixture_id):
             try:
                 if SOFASCORE_CLIENT:
                     SOFASCORE_CLIENT.close()
+                    SOFASCORE_CLIENT = None # Ensure global is cleared
                 initialize_sofascore_client()
                 # Try one last time after restart
                 final_result = get_finished_match_details(fixture_id)
