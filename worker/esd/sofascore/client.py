@@ -1,3 +1,5 @@
+# esd/sofascore/client.py
+
 """
 This module contains the client class for interacting with the Sofascore API.
 """
@@ -53,11 +55,12 @@ class SofascoreClient:
         Explicitly initialize the client.
         This can be useful for testing or delayed initialization.
         """
+        # Note: The service initialization happens in __init__. 
+        # This method is primarily used to ensure the object exists and logs.
         if not hasattr(self, '__initialized') or not self.__initialized:
-            self.logger.info("Initializing SofascoreClient...")
-            # Re-initialize service if needed
+            self.logger.info("Re-initializing SofascoreClient...")
             self.__initialized = True
-            self.logger.info("SofascoreClient initialized successfully")
+            self.logger.info("SofascoreClient re-initialized successfully")
 
     def close(self) -> None:
         """
