@@ -1,3 +1,5 @@
+# esd/sofascore/service.py
+
 """
 Sofascore service module
 """
@@ -30,9 +32,10 @@ def install_playwright_browsers():
         logger.error(f"Browser installation error: {e}")
         return False
 
-# Install browsers before anything else
+# Install browsers before anything else (Keep this outside the class for startup efficiency)
 install_playwright_browsers()
 
+# Corrected relative imports for the local package structure
 from ..utils import get_json, get_today
 from .endpoints import SofascoreEndpoints
 from .types import (
@@ -160,10 +163,13 @@ class SofascoreService:
         try:
             if self.page:
                 self.page.close()
+                self.page = None
             if self.browser:
                 self.browser.close()
+                self.browser = None
             if self.playwright:
                 self.playwright.stop()
+                self.playwright = None
             self.logger.info("Playwright resources closed successfully")
         except Exception as exc:
             self.logger.error(f"Failed to close browser: {str(exc)}")
@@ -176,6 +182,7 @@ class SofascoreService:
         self.close()
 
     def get_event(self, event_id: int) -> Event:
+        # ... (remains the same) ...
         """
         Get the event information.
 
@@ -194,6 +201,7 @@ class SofascoreService:
             raise exc
 
     def get_events(self, date: str = 'today') -> list[Event]:
+        # ... (remains the same) ...
         """
         Get the scheduled events.
 
@@ -213,6 +221,7 @@ class SofascoreService:
             raise exc
 
     def get_live_events(self) -> list[Event]:
+        # ... (remains the same) ...
         """
         Get the live events.
 
@@ -227,6 +236,7 @@ class SofascoreService:
             raise exc
 
     def get_player(self, player_id: int) -> Player:
+        # ... (remains the same) ...
         """
         Get the player information.
 
@@ -250,6 +260,7 @@ class SofascoreService:
             raise exc
 
     def get_player_attributes(self, player_id: int) -> PlayerAttributes:
+        # ... (remains the same) ...
         """
         Get the player attributes.
 
@@ -270,6 +281,7 @@ class SofascoreService:
             raise exc
 
     def get_player_transfer_history(self, player_id: int) -> TransferHistory:
+        # ... (remains the same) ...
         """
         Get the player transfer history.
 
@@ -290,6 +302,7 @@ class SofascoreService:
             raise exc
 
     def get_player_stats(self, player_id: int) -> dict:
+        # ... (remains the same) ...
         """
         TODO: Get the player statistics.
 
@@ -307,6 +320,7 @@ class SofascoreService:
             raise exc
 
     def get_match_lineups(self, event_id: int) -> Lineups:
+        # ... (remains the same) ...
         """
         Get the match lineups.
 
@@ -324,6 +338,7 @@ class SofascoreService:
             raise exc
 
     def get_match_incidents(self, event_id: int) -> list[Incident]:
+        # ... (remains the same) ...
         """
         Get the match incidents.
 
@@ -342,6 +357,7 @@ class SofascoreService:
             raise exc
 
     def get_match_top_players(self, event_id: int) -> TopPlayersMatch:
+        # ... (remains the same) ...
         """
         Get the top players of a match.
 
@@ -359,6 +375,7 @@ class SofascoreService:
             raise exc
 
     def get_match_comments(self, event_id: int) -> list[Comment]:
+        # ... (remains the same) ...
         """
         Get the match comments.
 
@@ -377,6 +394,7 @@ class SofascoreService:
             raise exc
 
     def get_match_stats(self, event_id: int) -> MatchStats:
+        # ... (remains the same) ...
         """
         Get the match statistics.
 
@@ -397,6 +415,7 @@ class SofascoreService:
             raise exc
 
     def get_match_shots(self, event_id: int) -> dict:
+        # ... (remains the same) ...
         """
         Get the match shots.
 
@@ -417,6 +436,7 @@ class SofascoreService:
             raise exc
 
     def get_team(self, team_id: int) -> Team:
+        # ... (remains the same) ...
         """
         Get the team information.
 
@@ -435,6 +455,7 @@ class SofascoreService:
             raise exc
 
     def get_team_players(self, team_id: int) -> list[Player]:
+        # ... (remains the same) ...
         """
         Get the team players.
 
@@ -455,6 +476,7 @@ class SofascoreService:
             raise exc
 
     def get_team_events(self, team_id: int, upcoming: bool, page: int) -> list[Event]:
+        # ... (remains the same) ...
         """
         Get the team events.
 
@@ -477,6 +499,7 @@ class SofascoreService:
             raise exc
 
     def get_tournaments_by_category(self, category_id: Category) -> list[Tournament]:
+        # ... (remains the same) ...
         """
         Get the tournaments by category id.
 
@@ -497,6 +520,7 @@ class SofascoreService:
             raise exc
 
     def get_tournament_seasons(self, tournament_id: int) -> list[Season]:
+        # ... (remains the same) ...
         """
         Get the seasons of a tournament.
 
@@ -517,6 +541,7 @@ class SofascoreService:
     def get_tournament_bracket(
         self, tournament_id: int | Tournament, season_id: int | Season
     ) -> list[Bracket]:
+        # ... (remains the same) ...
         """
         Get the tournament bracket.
 
@@ -542,6 +567,7 @@ class SofascoreService:
     def get_tournament_standings(
         self, tournament_id: int | Tournament, season_id: int | Season
     ) -> list[Standing]:
+        # ... (remains the same) ...
         """
         Get the tournament standings.
 
@@ -567,6 +593,7 @@ class SofascoreService:
     def get_tournament_top_teams(
         self, tournament_id: int | Tournament, season_id: int | Season
     ) -> TopTournamentTeams:
+        # ... (remains the same) ...
         """
         Get different top teams of a tournament.
 
@@ -594,6 +621,7 @@ class SofascoreService:
     def get_tournament_top_players(
         self, tournament_id: int | Tournament, season_id: int | Season
     ) -> TopTournamentPlayers:
+        # ... (remains the same) ...
         """
         Get the top players of the tournament.
 
@@ -623,6 +651,7 @@ class SofascoreService:
     def get_tournament_events(
         self, tournament_id: int, season_id: int, upcoming: bool, page: int
     ) -> list[Event]:
+        # ... (remains the same) ...
         """
         Get the events of a tournament.
 
@@ -649,6 +678,7 @@ class SofascoreService:
     def search(
         self, query: str, entity: EntityType = EntityType.ALL
     ) -> list[Event | Team | Player | Tournament]:
+        # ... (remains the same) ...
         """
         Search query for matches, teams, players, and tournaments.
 
