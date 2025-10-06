@@ -61,23 +61,44 @@ def get_json(page: Page, url: str) -> dict:
     Returns:
         dict: The JSON response.
     """
+    
+    # 🛑 CRITICAL FIX: Headers to bypass 403 Forbidden for direct API calls.
+    # We must mimic a legitimate browser request.
+    HEADERS = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.88 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        # Crucial headers for cross-site requests to trick the API firewall
+        'Origin': 'https://www.sofascore.com',
+        'Referer': 'https://www.sofascore.com/',
+        'x-requested-with': 'XMLHttpRequest', 
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-site',
+    }
+
 
     try:
         if page is None:
-            with httpx.Client() as client:
-                response = client.get(url)
+            # This is the direct API call path
+            with httpx.Client(timeout=20.0) as client: # Increased timeout for resilience
+                # FIX: Pass the headers here!
+                response = client.get(url, headers=HEADERS)
                 response.raise_for_status()
                 return response.json()
+        
+        # This is the Playwright/Scraping path
         page.goto(url, wait_until="networkidle")
         content = page.content()
         doc = html.fromstring(content)
         pre_text_list = doc.xpath("//pre/text()")
+        
         if pre_text_list:
             json_string = pre_text_list[0].strip()
             try:
                 data = json.loads(json_string)
                 if "error" in data and "code" in data["error"]:
                     code = data["error"]["code"]
+                    # Note: We keep the console prints here as they were in the original code
                     if code == 403:
                         print(
                             "Access denied. Please use a proxt, VPN or renew your ip address."
@@ -93,6 +114,7 @@ def get_json(page: Page, url: str) -> dict:
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404:
             return {}
+        # We need to re-raise the exception so it's caught by service.py and bot.py
         raise exc
 
 
