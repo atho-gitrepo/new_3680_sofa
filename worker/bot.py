@@ -149,9 +149,6 @@ class FirebaseManager:
         except Exception as e:
             logger.error(f"Firestore Error during delete_tracked_match: {e}")
 
-    # ❌ REMOVED THE INEFFICIENT get_unresolved_bets() FUNCTION ❌
-    
-    # NOTE: This function still uses .stream() but is called less frequently
     def get_stale_unresolved_bets(self, minutes_to_wait=BET_RESOLUTION_WAIT_MINUTES):
         if not self.db: return {}
         try:
@@ -245,6 +242,7 @@ def initialize_sofascore_client():
 
     logger.info("Attempting to initialize Sofascore client...")
     try:
+        # Assuming SofascoreClient is the wrapper for SofascoreService
         SOFASCORE_CLIENT = SofascoreClient()
         SOFASCORE_CLIENT.initialize() 
         logger.info("Sofascore client successfully initialized.")
@@ -322,7 +320,7 @@ def get_live_matches():
         logger.error("Sofascore client is not initialized.")
         return []
     try:
-        live_events = SOFASCORE_CLIENT.get_events(live=True)
+        live_events = SOFASCORE_CLIENT.get_live_events()
         logger.info(f"Fetched {len(live_events)} live matches.")
         return live_events
     except Exception as e:
@@ -332,26 +330,30 @@ def get_live_matches():
 def get_finished_match_details(sofascored_id):
     """
     Fetches the full event details for a match ID using the active Sofascore client.
+    
+    CRITICAL FIX: Uses the dedicated get_event endpoint instead of the general search, 
+    which was unreliable for finished match IDs.
     """
     if not SOFASCORE_CLIENT: 
         logger.error("Sofascore client is not initialized.")
         return None
     
+    sofascored_id = int(sofascored_id) 
+    
     try:
-        # Search using the correct sofascored_id
-        match_list = SOFASCORE_CLIENT.search(
-            str(sofascored_id), 
-            entity=EntityType.EVENT
-        )
+        # 🟢 FIX: Use the dedicated get_event method (from service.py) for reliable retrieval.
+        match_data = SOFASCORE_CLIENT.get_event(sofascored_id)
         
-        for match in match_list:
-            if match.id == int(sofascored_id):
-                return match
+        # Check if the returned object is the correct type and has the ID
+        if match_data and match_data.id == sofascored_id:
+            return match_data
         
-        logger.warning(f"Search for Sofascore ID {sofascored_id} returned no matching event ID in results.")
+        logger.warning(f"Failed to fetch event {sofascored_id} via get_event. Returned data was invalid or mismatched ID.")
         return None
+        
     except Exception as e:
-        logger.error(f"Sofascore Client Search Error for {sofascored_id}: {e}")
+        # Log the specific error from the API call
+        logger.error(f"Sofascore Client Error fetching finished event {sofascored_id}: {e}")
         return None
 
 def robust_get_finished_match_details(sofascored_id):
@@ -429,51 +431,6 @@ def place_regular_bet(state, fixture_id, score, match_info):
         state['36_bet_placed'] = True
         firebase_manager.update_tracked_match(fixture_id, state)
 
-# 32_over Bet Block Start
-#def place_32_over_bet(state, fixture_id, score, match_info):
-    #"""Handles placing the 32' over bet if score is 0-1 or 1-0."""
-    
-    ## 🟢 FIX: Check if an unresolved bet already exists for this fixture
-    #if firebase_manager.is_bet_unresolved(fixture_id): # OPTIMIZED
-        #logger.info(f"32_over bet already exists in 'unresolved_bets' for fixture {fixture_id}. Skipping placement and Telegram message.")
-        #if not state.get('32_bet_placed'):
-            #state['32_bet_placed'] = True
-            #firebase_manager.update_tracked_match(fixture_id, state)
-        #return
-        
-    #qualifying_scores = ['0-1', '1-0']
-    
-    #if score in qualifying_scores:
-        #over_line = 2.5 
-        #state['32_bet_placed'] = True
-        #firebase_manager.update_tracked_match(fixture_id, state)
-        #unresolved_data = {
-            #'match_name': match_info['match_name'],
-            #'placed_at': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
-            ## 🟢 MODIFIED: Use corrected league/country info
-            #'league': match_info['league_name'],
-            #'country': match_info['country'],
-            #'league_id': match_info['league_id'],
-            #'bet_type': BET_TYPE_32_OVER, 
-            #'32_score': score,
-            #'over_line': over_line,
-            #'fixture_id': fixture_id,
-            #'sofascored_id': fixture_id 
-        #}
-        #firebase_manager.add_unresolved_bet(fixture_id, unresolved_data)
-        
-        ## 🟢 MODIFIED: Use corrected league/country info in Telegram message
-        #telegram_message = (
-            #f"⏱️ **32' - {match_info['match_name']}**\n"
-            #f"🌍 {match_info['country']} | 🏆 {match_info['league_name']}\n"
-            #f"🔢 Score: {score}\n"
-            #f"🎯 Bet Placed: Total Goals **Over {over_line}** for Full Time"
-        #)
-        #send_telegram(telegram_message)
-    #else:
-        #state['32_bet_placed'] = True
-        #firebase_manager.update_tracked_match(fixture_id, state)
-# 32_over Bet Block End
 
 def check_ht_result(state, fixture_id, score, match_info):
     """Checks the result of all placed bets at halftime, skipping 32' over bets."""
@@ -667,9 +624,11 @@ def check_and_resolve_stale_bets():
         
         successful_api_call = True 
 
+        # Check the status from the reliably fetched match_data
         status_description = match_data.status.description.upper()
         
         if 'FINISHED' in status_description or 'ENDED' in status_description:
+            # Use the final score from the reliably fetched match_data
             final_score = f"{match_data.home_score.current or 0}-{match_data.away_score.current or 0}"
             match_name = bet_info.get('match_name', f"Match {match_id}")
             bet_type = bet_info.get('bet_type', 'unknown')
@@ -740,9 +699,6 @@ def run_bot_cycle():
         logger.error("Services are not initialized. Skipping cycle.")
         return
         
-    # ❌ REMOVED: firebase_manager.get_unresolved_bets() 
-    # The new targeted lookup functions handle this efficiently.
-    
     live_matches = get_live_matches() 
     
     for match in live_matches:
