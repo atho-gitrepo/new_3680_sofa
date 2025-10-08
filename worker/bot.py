@@ -320,13 +320,14 @@ def get_live_matches():
         logger.error("Sofascore client is not initialized.")
         return []
     try:
-        live_events = SOFASCORE_CLIENT.get_live_events()
+        # 🟢 FIX: Call the correct method signature from client.py
+        # client uses get_events(live=True) to fetch live events.
+        live_events = SOFASCORE_CLIENT.get_events(live=True)
         logger.info(f"Fetched {len(live_events)} live matches.")
         return live_events
     except Exception as e:
         logger.error(f"Sofascore API Error fetching live matches: {e}")
         return []
-
 def get_finished_match_details(sofascored_id):
     """
     Fetches the full event details for a match ID using the active Sofascore client.
