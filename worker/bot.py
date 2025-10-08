@@ -60,6 +60,8 @@ class FirebaseManager:
     """Manages all interactions with the Firebase Firestore database."""
     def __init__(self, credentials_json_string):
         self.db = None
+        # Initialize an empty cache for quick local lookups within one cycle
+        self._unresolved_bets_cache = {} 
         try:
             logger.info("Initializing Firebase...")
             if not credentials_json_string:
@@ -76,6 +78,53 @@ class FirebaseManager:
             logger.error(f"Failed to initialize Firebase: {e}")
             self.db = None
             raise
+    
+    # --- EFFICIENT LOOKUP METHODS (OPTIMIZED) ---
+    def is_bet_unresolved(self, match_id: int or str) -> bool:
+        """Checks for an unresolved bet using a direct document lookup."""
+        if not self.db: return False
+        match_id_str = str(match_id)
+        
+        # 1. Check local cache first (for speed within the same bot cycle)
+        if match_id_str in self._unresolved_bets_cache:
+            return True
+            
+        # 2. Perform a direct Firestore lookup (minimal read operation)
+        try:
+            doc_ref = self.db.collection('unresolved_bets').document(match_id_str)
+            doc = doc_ref.get() # Single document read (1 read operation)
+            if doc.exists:
+                # Update cache if found in Firestore
+                self._unresolved_bets_cache[match_id_str] = doc.to_dict()
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Firestore Error during is_bet_unresolved: {e}")
+            return False
+
+    def get_unresolved_bet_data(self, match_id: int or str) -> dict or None:
+        """Retrieves an unresolved bet's data."""
+        if not self.db: return None
+        match_id_str = str(match_id)
+
+        # 1. Check local cache first
+        if match_id_str in self._unresolved_bets_cache:
+            return self._unresolved_bets_cache.get(match_id_str)
+
+        # 2. Perform a direct Firestore lookup (minimal read operation)
+        try:
+            doc_ref = self.db.collection('unresolved_bets').document(match_id_str)
+            doc = doc_ref.get()
+            if doc.exists:
+                data = doc.to_dict()
+                # Update cache and return
+                self._unresolved_bets_cache[match_id_str] = data
+                return data
+            return None
+        except Exception as e:
+            logger.error(f"Firestore Error during get_unresolved_bet_data: {e}")
+            return None
+    # --- END EFFICIENT LOOKUP METHODS ---
             
     def get_tracked_match(self, match_id):
         if not self.db: return None
@@ -100,21 +149,13 @@ class FirebaseManager:
         except Exception as e:
             logger.error(f"Firestore Error during delete_tracked_match: {e}")
 
-    def get_unresolved_bets(self):
-        if not self.db: return {}
-        try:
-            bets = self.db.collection('unresolved_bets').stream()
-            result = {doc.id: doc.to_dict() for doc in bets}
-            # Cache the result locally for quick checks within a cycle
-            self._unresolved_bets_cache = result 
-            return result
-        except Exception as e:
-            logger.error(f"Firestore Error during get_unresolved_bets: {e}")
-            return {}
+    # ❌ REMOVED THE INEFFICIENT get_unresolved_bets() FUNCTION ❌
     
+    # NOTE: This function still uses .stream() but is called less frequently
     def get_stale_unresolved_bets(self, minutes_to_wait=BET_RESOLUTION_WAIT_MINUTES):
         if not self.db: return {}
         try:
+            # Performs a full scan, but runs only once every FIXTURE_API_INTERVAL (~15 min)
             bets = self.db.collection('unresolved_bets').stream()
             stale_bets = {}
             time_threshold = datetime.utcnow() - timedelta(minutes=minutes_to_wait)
@@ -141,14 +182,18 @@ class FirebaseManager:
 
     def add_unresolved_bet(self, match_id, data):
         if not self.db: return
+        match_id_str = str(match_id)
         try:
             data['placed_at'] = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-            self.db.collection('unresolved_bets').document(str(match_id)).set(data)
+            self.db.collection('unresolved_bets').document(match_id_str).set(data)
+            # Update cache when a bet is added
+            self._unresolved_bets_cache[match_id_str] = data 
         except Exception as e:
             logger.error(f"Firestore Error during add_unresolved_bet: {e}")
 
     def move_to_resolved(self, match_id, bet_info, outcome):
         if not self.db: return False
+        match_id_str = str(match_id)
         try:
             resolved_data = {
                 **bet_info,
@@ -156,8 +201,10 @@ class FirebaseManager:
                 'resolved_at': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
                 'resolution_timestamp': firestore.SERVER_TIMESTAMP
             } 
-            self.db.collection('resolved_bets').document(str(match_id)).set(resolved_data)
-            self.db.collection('unresolved_bets').document(str(match_id)).delete()
+            self.db.collection('resolved_bets').document(match_id_str).set(resolved_data)
+            self.db.collection('unresolved_bets').document(match_id_str).delete()
+            # Clear from cache when a bet is resolved
+            self._unresolved_bets_cache.pop(match_id_str, None) 
             return True
         except Exception as e:
             logger.error(f"Firestore Error during move_to_resolved: {e}")
@@ -343,9 +390,8 @@ def robust_get_finished_match_details(sofascored_id):
 def place_regular_bet(state, fixture_id, score, match_info):
     """Handles placing the initial 36' bet."""
     
-    # 🟢 FIX: Check if an unresolved bet already exists for this fixture
-    # This prevents duplicate messages and duplicate DB entries.
-    if firebase_manager.get_unresolved_bets().get(str(fixture_id)):
+    # 🟢 OPTIMIZED: Use direct lookup instead of full collection scan
+    if firebase_manager.is_bet_unresolved(fixture_id):
         logger.info(f"Regular bet already exists in 'unresolved_bets' for fixture {fixture_id}. Skipping placement and Telegram message.")
         # Ensure the tracked state is marked as placed to stop re-checking in subsequent runs
         if not state.get('36_bet_placed'):
@@ -388,7 +434,7 @@ def place_regular_bet(state, fixture_id, score, match_info):
     #"""Handles placing the 32' over bet if score is 0-1 or 1-0."""
     
     ## 🟢 FIX: Check if an unresolved bet already exists for this fixture
-    #if firebase_manager.get_unresolved_bets().get(str(fixture_id)):
+    #if firebase_manager.is_bet_unresolved(fixture_id): # OPTIMIZED
         #logger.info(f"32_over bet already exists in 'unresolved_bets' for fixture {fixture_id}. Skipping placement and Telegram message.")
         #if not state.get('32_bet_placed'):
             #state['32_bet_placed'] = True
@@ -433,7 +479,8 @@ def check_ht_result(state, fixture_id, score, match_info):
     """Checks the result of all placed bets at halftime, skipping 32' over bets."""
     
     current_score = score
-    unresolved_bet_data = firebase_manager.get_unresolved_bets().get(str(fixture_id)) 
+    # 🟢 OPTIMIZED: Use targeted getter function
+    unresolved_bet_data = firebase_manager.get_unresolved_bet_data(fixture_id) 
 
     if unresolved_bet_data:
         bet_type = unresolved_bet_data.get('bet_type')
@@ -475,15 +522,15 @@ def check_ht_result(state, fixture_id, score, match_info):
             firebase_manager.move_to_resolved(fixture_id, unresolved_bet_data, outcome)
             send_telegram(message)
     
-    if unresolved_bet_data is None or (unresolved_bet_data.get('bet_type') == BET_TYPE_REGULAR and outcome):
+    # 🟢 OPTIMIZED: Use targeted lookup instead of checking the cache
+    if not firebase_manager.is_bet_unresolved(fixture_id):
         firebase_manager.delete_tracked_match(fixture_id)
 
 def place_80_minute_bet(state, fixture_id, score, match_info):
     """Handles placing the new 80' bet."""
     
-    # 🟢 FIX: Check if an unresolved bet already exists for this fixture
-    # This prevents duplicate messages and duplicate DB entries.
-    if firebase_manager.get_unresolved_bets().get(str(fixture_id)):
+    # 🟢 OPTIMIZED: Use direct lookup instead of full collection scan
+    if firebase_manager.is_bet_unresolved(fixture_id):
         logger.info(f"80_minute bet already exists in 'unresolved_bets' for fixture {fixture_id}. Skipping placement and Telegram message.")
         # Ensure the tracked state is marked as placed to stop re-checking in subsequent runs
         if not state.get('80_bet_placed'):
@@ -570,7 +617,7 @@ def process_live_match(match):
     if status.upper() == '1H' and minute in MINUTES_REGULAR_BET and not state.get('36_bet_placed'):
         place_regular_bet(state, fixture_id, score, match_info)
         
-    elif status.upper() == STATUS_HALFTIME and firebase_manager.get_unresolved_bets().get(str(fixture_id)):
+    elif status.upper() == STATUS_HALFTIME and firebase_manager.is_bet_unresolved(fixture_id): # OPTIMIZED
         # Only check HT result if an unresolved bet exists (to avoid unnecessary HT checks)
         check_ht_result(state, fixture_id, score, match_info)
         
@@ -578,7 +625,7 @@ def process_live_match(match):
         place_80_minute_bet(state, fixture_id, score, match_info)
     
     # Clean up the tracked match if it's finished and all bets are resolved/cleared
-    if status in STATUS_FINISHED and not firebase_manager.get_unresolved_bets().get(str(fixture_id)):
+    if status in STATUS_FINISHED and not firebase_manager.is_bet_unresolved(fixture_id): # OPTIMIZED
         firebase_manager.delete_tracked_match(fixture_id)
 
 
@@ -675,6 +722,7 @@ def check_and_resolve_stale_bets():
             if outcome and outcome != 'error':
                 if send_telegram(message):
                     firebase_manager.move_to_resolved(match_id, bet_info, outcome)
+                    # We only delete the tracked match here if the bet was successfully resolved
                     firebase_manager.delete_tracked_match(match_id) 
                 time.sleep(1)
         
@@ -692,8 +740,8 @@ def run_bot_cycle():
         logger.error("Services are not initialized. Skipping cycle.")
         return
         
-    # Fetch unresolved bets once per cycle to use for duplicate checks
-    firebase_manager.get_unresolved_bets() 
+    # ❌ REMOVED: firebase_manager.get_unresolved_bets() 
+    # The new targeted lookup functions handle this efficiently.
     
     live_matches = get_live_matches() 
     
