@@ -39,16 +39,22 @@ MINUTES_REGULAR_BET = [36, 37]
 # 32_over Bet Block Start
 #MINUTES_32_MINUTE_BET = [32, 33]
 # 32_over Bet Block End
+# 80_minute Bet Block Start
 #MINUTES_80_MINUTE_BET = [79, 80]
+# 80_minute Bet Block End
 BET_TYPE_REGULAR = 'regular'
 # 32_over Bet Block Start
 #BET_TYPE_32_OVER = '32_over' 
 # 32_over Bet Block End
-BET_TYPE_80_MINUTE = '80_minute'
+# 80_minute Bet Block Start
+#BET_TYPE_80_MINUTE = '80_minute'
+# 80_minute Bet Block End
 STATUS_LIVE = ['LIVE', '1H', '2H', 'ET', 'P']
 STATUS_HALFTIME = 'HT'
 STATUS_FINISHED = ['FT', 'AET', 'PEN'] 
-BET_SCORES_80_MINUTE = ['3-1','2-0']
+# 80_minute Bet Block Start
+#BET_SCORES_80_MINUTE = ['3-1','2-0']
+# 80_minute Bet Block End
 MAX_FETCH_RETRIES = 3 
 BET_RESOLUTION_WAIT_MINUTES = 180 
 
@@ -160,9 +166,16 @@ class FirebaseManager:
             for doc in bets:
                 bet_info = doc.to_dict()
                 # 32_over Bet Block Start
+                # 80_minute Bet Block Start
                 #if bet_info.get('bet_type') in [BET_TYPE_80_MINUTE, BET_TYPE_32_OVER]: 
-                if bet_info.get('bet_type') in [BET_TYPE_80_MINUTE]: 
+                # 80_minute Bet Block End
+                #if bet_info.get('bet_type') in [BET_TYPE_80_MINUTE]: 
                 # 32_over Bet Block End
+                
+                # Check for bet types that need final resolution (currently only 32_over is blocked)
+                # Since the regular bet resolves at HT, we only need to check bets that persist past HT.
+                # If you unblock 32_over or 80_minute, this block should be modified.
+                if bet_info.get('bet_type') not in [BET_TYPE_REGULAR]:
                     placed_at_str = bet_info.get('placed_at')
                     if placed_at_str:
                         try:
@@ -484,47 +497,49 @@ def check_ht_result(state, fixture_id, score, match_info):
     if not firebase_manager.is_bet_unresolved(fixture_id):
         firebase_manager.delete_tracked_match(fixture_id)
 
-def place_80_minute_bet(state, fixture_id, score, match_info, actual_minute):
-    """Handles placing the new 80' bet."""
+# 80_minute Bet Block Start
+#def place_80_minute_bet(state, fixture_id, score, match_info, actual_minute):
+    #"""Handles placing the new 80' bet."""
     
-    # 🟢 OPTIMIZED: Use direct lookup instead of full collection scan
-    if firebase_manager.is_bet_unresolved(fixture_id):
-        logger.info(f"80_minute bet already exists in 'unresolved_bets' for fixture {fixture_id}. Skipping placement and Telegram message.")
-        # Ensure the tracked state is marked as placed to stop re-checking in subsequent runs
-        if not state.get('80_bet_placed'):
-            state['80_bet_placed'] = True
-            firebase_manager.update_tracked_match(fixture_id, state)
-        return
+    ## 🟢 OPTIMIZED: Use direct lookup instead of full collection scan
+    #if firebase_manager.is_bet_unresolved(fixture_id):
+        #logger.info(f"80_minute bet already exists in 'unresolved_bets' for fixture {fixture_id}. Skipping placement and Telegram message.")
+        ## Ensure the tracked state is marked as placed to stop re-checking in subsequent runs
+        #if not state.get('80_bet_placed'):
+            #state['80_bet_placed'] = True
+            #firebase_manager.update_tracked_match(fixture_id, state)
+        #return
 
-    if score in BET_SCORES_80_MINUTE:
-        state['80_bet_placed'] = True
-        state['80_score'] = score
-        firebase_manager.update_tracked_match(fixture_id, state)
-        unresolved_data = {
-            'match_name': match_info['match_name'],
-            'placed_at': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
-            # 🟢 MODIFIED: Use corrected league/country info
-            'league': match_info['league_name'],
-            'country': match_info['country'],
-            'league_id': match_info['league_id'],
-            'bet_type': BET_TYPE_80_MINUTE,
-            '80_score': score,
-            'fixture_id': fixture_id,
-            'sofascored_id': fixture_id 
-        }
-        firebase_manager.add_unresolved_bet(fixture_id, unresolved_data)
+    #if score in BET_SCORES_80_MINUTE:
+        #state['80_bet_placed'] = True
+        #state['80_score'] = score
+        #firebase_manager.update_tracked_match(fixture_id, state)
+        #unresolved_data = {
+            #'match_name': match_info['match_name'],
+            #'placed_at': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
+            ## 🟢 MODIFIED: Use corrected league/country info
+            #'league': match_info['league_name'],
+            #'country': match_info['country'],
+            #'league_id': match_info['league_id'],
+            #'bet_type': BET_TYPE_80_MINUTE,
+            #'80_score': score,
+            #'fixture_id': fixture_id,
+            #'sofascored_id': fixture_id 
+        #}
+        #firebase_manager.add_unresolved_bet(fixture_id, unresolved_data)
         
-        # 🟢 MODIFIED: Use corrected league/country info in Telegram message
-        message = (
-            f"⏱️ **80' - {match_info['match_name']}**\n"
-            f"🌍 {match_info['country']} | 🏆 {match_info['league_name']}\n"
-            f"🔢 Score: {score}\n"
-            f"🎯 80' Correct Score Bet Placed for Full Time"
-        )
-        send_telegram(message)
-    else:
-        state['80_bet_placed'] = True
-        firebase_manager.update_tracked_match(fixture_id, state)
+        ## 🟢 MODIFIED: Use corrected league/country info in Telegram message
+        #message = (
+            #f"⏱️ **80' - {match_info['match_name']}**\n"
+            #f"🌍 {match_info['country']} | 🏆 {match_info['league_name']}\n"
+            #f"🔢 Score: {score}\n"
+            #f"🎯 80' Correct Score Bet Placed for Full Time"
+        #)
+        #send_telegram(message)
+    #else:
+        #state['80_bet_placed'] = True
+        #firebase_manager.update_tracked_match(fixture_id, state)
+# 80_minute Bet Block End
 
 def process_live_match(match):
     """
@@ -554,9 +569,13 @@ def process_live_match(match):
         # 32_over Bet Block Start
         #'32_bet_placed': False, 
         # 32_over Bet Block End
-        '80_bet_placed': False,
+        # 80_minute Bet Block Start
+        #'80_bet_placed': False,
+        # 80_minute Bet Block End
         '36_score': None,
-        '80_score': None,
+        # 80_minute Bet Block Start
+        #'80_score': None,
+        # 80_minute Bet Block End
     }
     
     # 🟢 Extraction is already correct here (Country Name is Category Name)
@@ -579,8 +598,10 @@ def process_live_match(match):
         # Only check HT result if an unresolved bet exists (to avoid unnecessary HT checks)
         check_ht_result(state, fixture_id, score, match_info)
         
-    elif status.upper() == '2H' and minute is not None and minute >= 79 and not state.get('80_bet_placed'):
-        place_80_minute_bet(state, fixture_id, score, match_info, minute)
+    # 80_minute Bet Block Start
+    #elif status.upper() == '2H' and minute is not None and minute >= 79 and not state.get('80_bet_placed'):
+        #place_80_minute_bet(state, fixture_id, score, match_info, minute)
+    # 80_minute Bet Block End
     
     # Clean up the tracked match if it's finished and all bets are resolved/cleared
     if status in STATUS_FINISHED and not firebase_manager.is_bet_unresolved(fixture_id): # OPTIMIZED
@@ -641,19 +662,21 @@ def check_and_resolve_stale_bets():
             outcome = None
             message = ""
 
-            if bet_type == BET_TYPE_80_MINUTE:
-                bet_score = bet_info.get('80_score')
-                outcome = 'win' if final_score == bet_score else 'loss'
+            # 80_minute Bet Block Start
+            #if bet_type == BET_TYPE_80_MINUTE:
+                #bet_score = bet_info.get('80_score')
+                #outcome = 'win' if final_score == bet_score else 'loss'
                 
-                # 🟢 MODIFIED: Use corrected league/country info in Telegram message
-                message = (
-                    f"🏁 **FINAL RESULT - 80' Bet**\n"
-                    f"⚽ {match_name}\n"
-                    f"🌍 {country_name} | 🏆 {league_name}\n"
-                    f"🔢 Final Score: {final_score}\n"
-                    f"🎯 Bet on 80' Score: {bet_score}\n"
-                    f"📊 Outcome: {'✅ WON' if outcome == 'win' else '❌ LOST'}"
-                )
+                ## 🟢 MODIFIED: Use corrected league/country info in Telegram message
+                #message = (
+                    #f"🏁 **FINAL RESULT - 80' Bet**\n"
+                    #f"⚽ {match_name}\n"
+                    #f"🌍 {country_name} | 🏆 {league_name}\n"
+                    #f"🔢 Final Score: {final_score}\n"
+                    #f"🎯 Bet on 80' Score: {bet_score}\n"
+                    #f"📊 Outcome: {'✅ WON' if outcome == 'win' else '❌ LOST'}"
+                #)
+            # 80_minute Bet Block End
             # 32_over Bet Block Start
             #elif bet_type == BET_TYPE_32_OVER:
                 #over_line = bet_info.get('over_line')
@@ -679,6 +702,9 @@ def check_and_resolve_stale_bets():
                     #message = f"⚠️ FINAL RESULT: {match_name}\n❌ Bet could not be resolved due to score format issue."
             # 32_over Bet Block End
 
+            # The only bet type that should reach this resolution function now is '32_over' if it was unblocked.
+            # If no bet type is unblocked, this block will do nothing and just continue to the next bet.
+            
             if outcome and outcome != 'error':
                 if send_telegram(message):
                     firebase_manager.move_to_resolved(match_id, bet_info, outcome)
