@@ -39,7 +39,7 @@ MINUTES_REGULAR_BET = [36, 37]
 # 32_over Bet Block Start
 #MINUTES_32_MINUTE_BET = [32, 33]
 # 32_over Bet Block End
-MINUTES_80_MINUTE_BET = [79, 80]
+#MINUTES_80_MINUTE_BET = [79, 80]
 BET_TYPE_REGULAR = 'regular'
 # 32_over Bet Block Start
 #BET_TYPE_32_OVER = '32_over' 
@@ -484,7 +484,7 @@ def check_ht_result(state, fixture_id, score, match_info):
     if not firebase_manager.is_bet_unresolved(fixture_id):
         firebase_manager.delete_tracked_match(fixture_id)
 
-def place_80_minute_bet(state, fixture_id, score, match_info):
+def place_80_minute_bet(state, fixture_id, score, match_info, actual_minute):
     """Handles placing the new 80' bet."""
     
     # 🟢 OPTIMIZED: Use direct lookup instead of full collection scan
@@ -579,8 +579,8 @@ def process_live_match(match):
         # Only check HT result if an unresolved bet exists (to avoid unnecessary HT checks)
         check_ht_result(state, fixture_id, score, match_info)
         
-    elif status.upper() == '2H' and minute in MINUTES_80_MINUTE_BET and not state.get('80_bet_placed'):
-        place_80_minute_bet(state, fixture_id, score, match_info)
+    elif status.upper() == '2H' and minute is not None and minute >= 79 and not state.get('80_bet_placed'):
+        place_80_minute_bet(state, fixture_id, score, match_info, minute)
     
     # Clean up the tracked match if it's finished and all bets are resolved/cleared
     if status in STATUS_FINISHED and not firebase_manager.is_bet_unresolved(fixture_id): # OPTIMIZED
