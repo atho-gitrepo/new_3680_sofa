@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 import firebase_admin
 from firebase_admin import credentials, firestore
 # Correct import structure for your local library
-# Ensure 'esd.sofascore' is correctly set up in your environment
 from esd.sofascore import SofascoreClient, EntityType 
 
 # --- GLOBAL VARIABLES ---
@@ -32,7 +31,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 FIREBASE_CREDENTIALS_JSON_STRING = os.getenv("FIREBASE_CREDENTIALS_JSON")
 
 # --- CONSTANTS ---
-SLEEP_TIME = 60 # 💡 OPTIMIZATION: Increased sleep time to reduce read frequency
+SLEEP_TIME = 60
 FIXTURE_API_INTERVAL = 900
 MINUTES_REGULAR_BET = [36, 37]
 # 80_minute Bet Block Start - ACTIVE
@@ -80,23 +79,41 @@ class FirebaseManager:
             raise
     
     # --- EFFICIENT LOOKUP METHODS (OPTIMIZED) ---
+    def is_bet_unresolved(self, match_id: int or str) -> bool:
+        """Checks for an unresolved bet using a direct document lookup."""
+        if not self.db: return False
+        match_id_str = str(match_id)
+        
+        # 1. Check local cache first (for speed within the same bot cycle)
+        if match_id_str in self._unresolved_bets_cache:
+            return True
+            
+        # 2. Perform a direct Firestore lookup (minimal read operation)
+        try:
+            doc_ref = self.db.collection('unresolved_bets').document(match_id_str)
+            doc = doc_ref.get() # Single document read (1 read operation)
+            if doc.exists:
+                # Update cache if found in Firestore
+                self._unresolved_bets_cache[match_id_str] = doc.to_dict()
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Firestore Error during is_bet_unresolved: {e}")
+            return False
+
     def get_unresolved_bet_data(self, match_id: int or str) -> dict or None:
-        """
-        Retrieves an unresolved bet's data. 
-        Uses cache first, then performs a direct Firestore document lookup (1 read).
-        This is the primary read function for single documents.
-        """
+        """Retrieves an unresolved bet's data."""
         if not self.db: return None
         match_id_str = str(match_id)
 
-        # 1. Check local cache first (0 reads)
+        # 1. Check local cache first
         if match_id_str in self._unresolved_bets_cache:
             return self._unresolved_bets_cache.get(match_id_str)
 
-        # 2. Perform a direct Firestore lookup (1 read)
+        # 2. Perform a direct Firestore lookup (minimal read operation)
         try:
             doc_ref = self.db.collection('unresolved_bets').document(match_id_str)
-            doc = doc_ref.get() 
+            doc = doc_ref.get()
             if doc.exists:
                 data = doc.to_dict()
                 # Update cache and return
@@ -106,14 +123,6 @@ class FirebaseManager:
         except Exception as e:
             logger.error(f"Firestore Error during get_unresolved_bet_data: {e}")
             return None
-            
-    def is_bet_unresolved(self, match_id: int or str) -> bool:
-        """
-        Checks for an unresolved bet. Relies on get_unresolved_bet_data for the lookup 
-        which manages the cache and read operation.
-        """
-        # 💡 OPTIMIZATION: Calls the centralized lookup method. Cache access is guaranteed.
-        return self.get_unresolved_bet_data(match_id) is not None
     # --- END EFFICIENT LOOKUP METHODS ---
             
     def get_tracked_match(self, match_id):
@@ -142,22 +151,25 @@ class FirebaseManager:
     def get_stale_unresolved_bets(self, minutes_to_wait=BET_RESOLUTION_WAIT_MINUTES):
         if not self.db: return {}
         try:
-            # 💡 OPTIMIZATION: Query for stale bets instead of full collection scan/stream.
-            # This only reads documents that meet the time and type criteria.
-            time_threshold = datetime.utcnow() - timedelta(minutes=minutes_to_wait)
+            # Performs a full scan, but runs only once every FIXTURE_API_INTERVAL (~15 min)
+            bets = self.db.collection('unresolved_bets').stream()
             stale_bets = {}
+            time_threshold = datetime.utcnow() - timedelta(minutes=minutes_to_wait)
             
-            # The query requires a Composite Index on ('bet_type', 'placed_at_ts')
-            stale_bets_query = self.db.collection('unresolved_bets').where(
-                'placed_at_ts', '<', time_threshold
-            ).where(
-                'bet_type', '==', BET_TYPE_80_MINUTE 
-            ).stream() 
-
-            for doc in stale_bets_query:
+            for doc in bets:
                 bet_info = doc.to_dict()
-                stale_bets[doc.id] = bet_info
-
+                
+                # Check for bet types that need final resolution (80_minute bet persists past HT)
+                if bet_info.get('bet_type') in [BET_TYPE_80_MINUTE]:
+                    placed_at_str = bet_info.get('placed_at')
+                    if placed_at_str:
+                        try:
+                            placed_at_dt = datetime.strptime(placed_at_str, '%Y-%m-%d %H:%M:%S')
+                            if placed_at_dt < time_threshold:
+                                stale_bets[doc.id] = bet_info
+                        except ValueError:
+                            logger.warning(f"Could not parse placed_at timestamp for bet {doc.id}")
+                            continue
             return stale_bets
         except Exception as e:
             logger.error(f"Firestore Error during get_stale_unresolved_bets: {e}")
@@ -168,8 +180,6 @@ class FirebaseManager:
         match_id_str = str(match_id)
         try:
             data['placed_at'] = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-            # 💡 OPTIMIZATION: Add native Firestore Timestamp for efficient querying
-            data['placed_at_ts'] = firestore.SERVER_TIMESTAMP 
             self.db.collection('unresolved_bets').document(match_id_str).set(data)
             # Update cache when a bet is added
             self._unresolved_bets_cache[match_id_str] = data 
@@ -369,7 +379,6 @@ def robust_get_finished_match_details(sofascored_id):
 def place_regular_bet(state, fixture_id, score, match_info):
     """Handles placing the initial 36' bet."""
     
-    # is_bet_unresolved now uses the optimized lookup, checking cache first (0 reads), then Firestore (1 read).
     if firebase_manager.is_bet_unresolved(fixture_id):
         logger.info(f"Regular bet already exists in 'unresolved_bets' for fixture {fixture_id}. Skipping placement and Telegram message.")
         if not state.get('36_bet_placed'):
@@ -392,7 +401,6 @@ def place_regular_bet(state, fixture_id, score, match_info):
             'fixture_id': fixture_id,
             'sofascored_id': fixture_id 
         }
-        # add_unresolved_bet now includes 'placed_at_ts'
         firebase_manager.add_unresolved_bet(fixture_id, unresolved_data)
         
         message = (
@@ -411,7 +419,6 @@ def check_ht_result(state, fixture_id, score, match_info):
     """Checks the result of the regular 36' bet at halftime."""
     
     current_score = score
-    # get_unresolved_bet_data now uses the optimized lookup, checking cache first (0 reads), then Firestore (1 read).
     unresolved_bet_data = firebase_manager.get_unresolved_bet_data(fixture_id) 
 
     if unresolved_bet_data:
@@ -480,7 +487,6 @@ def place_80_minute_bet(state, fixture_id, score, match_info, actual_minute):
             'fixture_id': fixture_id,
             'sofascored_id': fixture_id 
         }
-        # add_unresolved_bet now includes 'placed_at_ts'
         firebase_manager.add_unresolved_bet(fixture_id, unresolved_data)
         
         message = (
@@ -570,7 +576,6 @@ def check_and_resolve_stale_bets():
     Checks and resolves old, unresolved bets by fetching their final status.
     This function primarily handles the 80' bet (and any other FT-resolved bet).
     """
-    # get_stale_unresolved_bets uses the new optimized query (requires index)
     stale_bets = firebase_manager.get_stale_unresolved_bets(BET_RESOLUTION_WAIT_MINUTES)
     if not stale_bets:
         return
@@ -727,8 +732,7 @@ if __name__ == "__main__":
         try:
             while True:
                 main_loop_iteration()
-                # SLEEP_TIME is now 60
-                logger.info(f"Sleeping for {SLEEP_TIME} seconds...") 
+                logger.info(f"Sleeping for {SLEEP_TIME} seconds...")
                 time.sleep(SLEEP_TIME)
         except KeyboardInterrupt:
             logger.info("Bot shutting down due to user interrupt.")
