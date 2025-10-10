@@ -708,7 +708,7 @@ def execute_unresolved_bet_resolution():
     
     logger.info("--- END: Unresolved Bet Resolution (FT Bets) ---")
 
-def main_loop_iteration():
+def run_bot_cycle():
     """The main execution function for one complete cycle of the bot."""
     logger.info("=====================================================")
     logger.info("Starting new bot cycle...")
@@ -731,7 +731,7 @@ if __name__ == "__main__":
     if initialize_bot_services():
         try:
             while True:
-                main_loop_iteration()
+                run_bot_cycle()
                 logger.info(f"Sleeping for {SLEEP_TIME} seconds...")
                 time.sleep(SLEEP_TIME)
         except KeyboardInterrupt:
