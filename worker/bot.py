@@ -66,7 +66,7 @@ RESOLVED_BETS_FILE = 'resolved_bets.json'
 CONFIG_FILE = 'config.json'
 
 # =========================================================
-# 📌 INITIALIZATION FUNCTIONS
+# 📌 INITIALIZATION FUNCTIONS (LocalFileManager)
 # =========================================================
 
 class LocalFileManager:
@@ -76,8 +76,7 @@ class LocalFileManager:
         self._unresolved_bets = self._load_data(UNRESOLVED_BETS_FILE)
         self._resolved_bets = self._load_data(RESOLVED_BETS_FILE)
         self._config = self._load_data(CONFIG_FILE)
-        # Initialize an empty cache for quick local lookups within one cycle
-        # This is now a reference to the main dict, but we keep the name for consistency
+        # Cache is now a reference to the main dict
         self._unresolved_bets_cache = self._unresolved_bets
         logger.info("Local File Manager initialized successfully.")
 
@@ -86,7 +85,6 @@ class LocalFileManager:
         if os.path.exists(filename):
             try:
                 with open(filename, 'r') as f:
-                    # Convert keys back to integers for matches if needed, but strings are safer
                     return json.load(f)
             except (json.JSONDecodeError, IOError) as e:
                 logger.error(f"Failed to load data from {filename}: {e}. Starting with empty data.")
@@ -96,7 +94,6 @@ class LocalFileManager:
     def _save_data(self, data: dict, filename: str):
         """Helper to save data to a JSON file."""
         try:
-            # Use indent for readability in local files
             with open(filename, 'w') as f:
                 json.dump(data, f, indent=4)
         except IOError as e:
@@ -127,7 +124,6 @@ class LocalFileManager:
         time_threshold = datetime.utcnow() - timedelta(minutes=minutes_to_wait)
         
         for match_id, bet_info in self._unresolved_bets.items():
-            # Only check for bet types that persist past HT (currently none in the base code)
             if bet_info.get('bet_type') not in [BET_TYPE_REGULAR]:
                 placed_at_str = bet_info.get('placed_at')
                 if placed_at_str:
@@ -154,7 +150,6 @@ class LocalFileManager:
             **bet_info,
             'outcome': outcome,
             'resolved_at': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
-            # NOTE: firestore.SERVER_TIMESTAMP is replaced with a standard timestamp string
             'resolution_timestamp': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S') 
         } 
         self._resolved_bets[match_id_str] = resolved_data
@@ -168,7 +163,7 @@ class LocalFileManager:
         return self._tracked_matches.get(str(match_id))
 
     def update_tracked_match(self, match_id, data):
-        """Updates a tracked match's data (partial update via merge=True is simulated)."""
+        """Updates a tracked match's data."""
         match_id_str = str(match_id)
         current_data = self._tracked_matches.get(match_id_str, {})
         current_data.update(data)
@@ -197,7 +192,6 @@ class LocalFileManager:
 def initialize_sofascore_client():
     """
     Initializes and sets the global SOFASCORE_CLIENT object.
-    (No change here)
     """
     global SOFASCORE_CLIENT
     
@@ -207,7 +201,6 @@ def initialize_sofascore_client():
 
     logger.info("Attempting to initialize Sofascore client...")
     try:
-        # Assuming SofascoreClient is the wrapper for SofascoreService
         SOFASCORE_CLIENT = SofascoreClient()
         SOFASCORE_CLIENT.initialize() 
         logger.info("Sofascore client successfully initialized.")
@@ -217,6 +210,34 @@ def initialize_sofascore_client():
         SOFASCORE_CLIENT = None
         return False
 
+# =========================================================
+# 🏃 CORE LOGIC FUNCTIONS
+# =========================================================
+
+def send_telegram(msg, max_retries=3):
+    """Send Telegram message with retry mechanism"""
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        logger.warning(f"Telegram credentials missing. Message not sent: {msg}")
+        return False
+        
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    data = {'chat_id': TELEGRAM_CHAT_ID, 'text': msg, 'parse_mode': 'Markdown'} 
+    
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(url, data=data, timeout=10)
+            if response.status_code == 200:
+                return True
+            else:
+                logger.error(f"Telegram error (attempt {attempt + 1}): {response.status_code} - {response.text}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network Error sending Telegram message (attempt {attempt + 1}): {e}")
+        
+        if attempt < max_retries - 1:
+            time.sleep(2 ** attempt)
+    
+    return False
+
 def initialize_bot_services():
     """Initializes all external services (Local File Manager and Sofascore Client)."""
     global local_file_manager
@@ -225,13 +246,11 @@ def initialize_bot_services():
     
     # 1. Initialize Local File Manager
     try:
-        # Initialize the local file manager
         local_file_manager = LocalFileManager()
     except Exception as e:
         logger.critical(f"Bot cannot proceed. Local File Manager initialization failed: {e}")
         return False
         
-    # Check if the manager was created (it should be, unless an unhandled error occurred)
     if local_file_manager is None:
          logger.critical("Bot cannot proceed. Local File Manager initialization failed.")
          return False
@@ -242,6 +261,7 @@ def initialize_bot_services():
         return False
         
     logger.info("All bot services initialized successfully.")
+    # This call is now safe because send_telegram is defined above this function
     send_telegram("🚀 Football Betting Bot Initialized Successfully! Starting monitoring.")
     return True
     
@@ -259,36 +279,92 @@ def shutdown_bot():
         SOFASCORE_CLIENT.close()
         logger.info("Sofascore Client resources closed.")
 
-# The rest of the functions (send_telegram, get_live_matches, etc.) remain the same, 
-# but they will now use the global `local_file_manager` instead of `firebase_manager`.
+def get_live_matches():
+    """Fetch ONLY live matches using the Sofascore client."""
+    if not SOFASCORE_CLIENT:
+        logger.error("Sofascore client is not initialized.")
+        return []
+    try:
+        live_events = SOFASCORE_CLIENT.get_events(live=True)
+        logger.info(f"Fetched {len(live_events)} live matches.")
+        return live_events
+    except Exception as e:
+        logger.error(f"Sofascore API Error fetching live matches: {e}")
+        return []
+        
+def get_finished_match_details(sofascored_id):
+    """
+    Fetches the full event details for a match ID using the active Sofascore client.
+    """
+    if not SOFASCORE_CLIENT: 
+        logger.error("Sofascore client is not initialized.")
+        return None
+    
+    sofascored_id = int(sofascored_id) 
+    
+    try:
+        match_data = SOFASCORE_CLIENT.get_event(sofascored_id)
+        
+        if match_data and match_data.id == sofascored_id:
+            return match_data
+        
+        logger.warning(f"Failed to fetch event {sofascored_id} via get_event. Returned data was invalid or mismatched ID.")
+        return None
+        
+    except Exception as e:
+        logger.error(f"Sofascore Client Error fetching finished event {sofascored_id}: {e}")
+        return None
 
-# All logic calls must be updated to use the new global manager name:
-# from `firebase_manager.<method>` to `local_file_manager.<method>`
+def robust_get_finished_match_details(sofascored_id):
+    """
+    Wrapper to attempt fetching match details with retries and client refresh on persistent failure.
+    """
+    global SOFASCORE_CLIENT
+    
+    for attempt in range(MAX_FETCH_RETRIES):
+        result = get_finished_match_details(sofascored_id)
+        if result:
+            if attempt > 0:
+                logger.info(f"Successfully fetched {sofascored_id} on attempt {attempt + 1}.")
+            return result
+        
+        if attempt == MAX_FETCH_RETRIES - 1:
+            logger.error(f"Permanent failure fetching {sofascored_id} after {MAX_FETCH_RETRIES} attempts. Attempting full client restart.")
+            try:
+                if SOFASCORE_CLIENT:
+                    SOFASCORE_CLIENT.close()
+                    SOFASCORE_CLIENT = None 
+                initialize_sofascore_client()
+                final_result = get_finished_match_details(sofascored_id)
+                if final_result:
+                    logger.info(f"Successfully fetched {sofascored_id} after client restart.")
+                    return final_result
+            except Exception as e:
+                logger.critical(f"FATAL: Client restart failed for {sofascored_id}: {e}")
+            
+        
+        logger.warning(f"Failed to fetch final data for Sofascore ID {sofascored_id}. Retrying in {2 ** attempt}s (Attempt {attempt + 1}/{MAX_FETCH_RETRIES}).")
+        time.sleep(2 ** attempt)
+        
+    return None
 
-# Example of a change within a core function:
 def place_regular_bet(state, fixture_id, score, match_info):
     """Handles placing the initial 36' bet."""
     
-    # 🟢 OPTIMIZED: Use direct lookup instead of full collection scan
-    # CHANGED: firebase_manager.is_bet_unresolved -> local_file_manager.is_bet_unresolved
-    if local_file_manager.is_bet_unresolved(fixture_id): 
+    if local_file_manager.is_bet_unresolved(fixture_id):
         logger.info(f"Regular bet already exists in 'unresolved_bets' for fixture {fixture_id}. Skipping placement and Telegram message.")
-        # Ensure the tracked state is marked as placed to stop re-checking in subsequent runs
         if not state.get('36_bet_placed'):
             state['36_bet_placed'] = True
-            # CHANGED: firebase_manager.update_tracked_match -> local_file_manager.update_tracked_match
             local_file_manager.update_tracked_match(fixture_id, state)
         return
 
     if score in ['1-1', '2-2', '3-3']:
         state['36_bet_placed'] = True
         state['36_score'] = score
-        # CHANGED: firebase_manager.update_tracked_match -> local_file_manager.update_tracked_match
         local_file_manager.update_tracked_match(fixture_id, state)
         unresolved_data = {
             'match_name': match_info['match_name'],
             'placed_at': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
-            # 🟢 MODIFIED: Use corrected league/country info
             'league': match_info['league_name'],
             'country': match_info['country'],
             'league_id': match_info['league_id'],
@@ -297,10 +373,8 @@ def place_regular_bet(state, fixture_id, score, match_info):
             'fixture_id': fixture_id,
             'sofascored_id': fixture_id 
         }
-        # CHANGED: firebase_manager.add_unresolved_bet -> local_file_manager.add_unresolved_bet
         local_file_manager.add_unresolved_bet(fixture_id, unresolved_data)
         
-        # 🟢 MODIFIED: Use corrected league/country info in Telegram message
         message = (
             f"⏱️ **36' - {match_info['match_name']}**\n"
             f"🌍 {match_info['country']} | 🏆 {match_info['league_name']}\n"
@@ -310,26 +384,13 @@ def place_regular_bet(state, fixture_id, score, match_info):
         send_telegram(message)
     else:
         state['36_bet_placed'] = True
-        # CHANGED: firebase_manager.update_tracked_match -> local_file_manager.update_tracked_match
         local_file_manager.update_tracked_match(fixture_id, state)
 
-# The same logic is applied to all functions that interacted with `firebase_manager`:
-# check_ht_result, process_live_match, check_and_resolve_stale_bets, run_bot_cycle
 
-# --- The rest of the file (including all functions below) has the same logic, 
-# but all calls to `firebase_manager` are changed to `local_file_manager` ---
-
-# The full, correct `bot.py` is too long to display in full here, 
-# but I have ensured all references to `firebase_manager` in the provided 
-# original code are correctly updated to `local_file_manager` and 
-# the `LocalFileManager` is implemented as shown above.
-
-# ... (The rest of the code follows, with `firebase_manager` replaced by `local_file_manager` everywhere) ...
 def check_ht_result(state, fixture_id, score, match_info):
     """Checks the result of all placed bets at halftime, skipping 32' over bets."""
     
     current_score = score
-    # 🟢 OPTIMIZED: Use targeted getter function
     unresolved_bet_data = local_file_manager.get_unresolved_bet_data(fixture_id) 
 
     if unresolved_bet_data:
@@ -337,7 +398,6 @@ def check_ht_result(state, fixture_id, score, match_info):
         outcome = None
         message = ""
 
-        # 🟢 Use corrected league/country info from the 'unresolved_bet_data' 
         country_name = unresolved_bet_data.get('country', 'N/A') 
         league_name = unresolved_bet_data.get('league', 'N/A')
         
@@ -372,9 +432,45 @@ def check_ht_result(state, fixture_id, score, match_info):
             local_file_manager.move_to_resolved(fixture_id, unresolved_bet_data, outcome)
             send_telegram(message)
     
-    # 🟢 OPTIMIZED: Use targeted lookup instead of checking the cache
     if not local_file_manager.is_bet_unresolved(fixture_id):
         local_file_manager.delete_tracked_match(fixture_id)
+
+# 80_minute Bet Block Start
+#def place_80_minute_bet(state, fixture_id, score, match_info, actual_minute):
+    #"""Handles placing the new 80' bet."""
+    #if local_file_manager.is_bet_unresolved(fixture_id):
+        #logger.info(f"80_minute bet already exists in 'unresolved_bets' for fixture {fixture_id}. Skipping placement and Telegram message.")
+        #if not state.get('80_bet_placed'):
+            #state['80_bet_placed'] = True
+            #local_file_manager.update_tracked_match(fixture_id, state)
+        #return
+    #if score in BET_SCORES_80_MINUTE:
+        #state['80_bet_placed'] = True
+        #state['80_score'] = score
+        #local_file_manager.update_tracked_match(fixture_id, state)
+        #unresolved_data = {
+            #'match_name': match_info['match_name'],
+            #'placed_at': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
+            #'league': match_info['league_name'],
+            #'country': match_info['country'],
+            #'league_id': match_info['league_id'],
+            #'bet_type': BET_TYPE_80_MINUTE,
+            #'80_score': score,
+            #'fixture_id': fixture_id,
+            #'sofascored_id': fixture_id 
+        #}
+        #local_file_manager.add_unresolved_bet(fixture_id, unresolved_data)
+        #message = (
+            #f"⏱️ **80' - {match_info['match_name']}**\n"
+            #f"🌍 {match_info['country']} | 🏆 {match_info['league_name']}\n"
+            #f"🔢 Score: {score}\n"
+            #f"🎯 80' Correct Score Bet Placed for Full Time"
+        #)
+        #send_telegram(message)
+    #else:
+        #state['80_bet_placed'] = True
+        #local_file_manager.update_tracked_match(fixture_id, state)
+# 80_minute Bet Block End
 
 def process_live_match(match):
     """
@@ -399,7 +495,6 @@ def process_live_match(match):
     if status.upper() not in STATUS_LIVE and status.upper() != STATUS_HALFTIME: return
     if minute is None and status.upper() not in [STATUS_HALFTIME]: return
     
-    # CHANGED: firebase_manager.get_tracked_match -> local_file_manager.get_tracked_match
     state = local_file_manager.get_tracked_match(fixture_id) or {
         '36_bet_placed': False,
         # 32_over Bet Block Start
@@ -414,7 +509,6 @@ def process_live_match(match):
         # 80_minute Bet Block End
     }
     
-    # 🟢 Extraction is already correct here (Country Name is Category Name)
     match_info = {
         'match_name': match_name,
         'league_name': match.tournament.name if hasattr(match, 'tournament') else 'N/A',
@@ -430,9 +524,7 @@ def process_live_match(match):
     if status.upper() == '1H' and minute in MINUTES_REGULAR_BET and not state.get('36_bet_placed'):
         place_regular_bet(state, fixture_id, score, match_info)
         
-    # CHANGED: firebase_manager.is_bet_unresolved -> local_file_manager.is_bet_unresolved
-    elif status.upper() == STATUS_HALFTIME and local_file_manager.is_bet_unresolved(fixture_id): # OPTIMIZED
-        # Only check HT result if an unresolved bet exists (to avoid unnecessary HT checks)
+    elif status.upper() == STATUS_HALFTIME and local_file_manager.is_bet_unresolved(fixture_id):
         check_ht_result(state, fixture_id, score, match_info)
         
     # 80_minute Bet Block Start
@@ -440,10 +532,7 @@ def process_live_match(match):
         #place_80_minute_bet(state, fixture_id, score, match_info, minute)
     # 80_minute Bet Block End
     
-    # Clean up the tracked match if it's finished and all bets are resolved/cleared
-    # CHANGED: firebase_manager.is_bet_unresolved -> local_file_manager.is_bet_unresolved
-    if status in STATUS_FINISHED and not local_file_manager.is_bet_unresolved(fixture_id): # OPTIMIZED
-        # CHANGED: firebase_manager.delete_tracked_match -> local_file_manager.delete_tracked_match
+    if status in STATUS_FINISHED and not local_file_manager.is_bet_unresolved(fixture_id):
         local_file_manager.delete_tracked_match(fixture_id)
 
 
@@ -451,12 +540,10 @@ def check_and_resolve_stale_bets():
     """
     Checks and resolves old, unresolved bets by fetching their final status.
     """
-    # CHANGED: firebase_manager.get_stale_unresolved_bets -> local_file_manager.get_stale_unresolved_bets
     stale_bets = local_file_manager.get_stale_unresolved_bets(BET_RESOLUTION_WAIT_MINUTES)
     if not stale_bets:
         return
     
-    # CHANGED: firebase_manager.get_last_api_call -> local_file_manager.get_last_api_call
     last_call_str = local_file_manager.get_last_api_call()
     last_call_dt = None
     if last_call_str:
@@ -475,10 +562,8 @@ def check_and_resolve_stale_bets():
     successful_api_call = False
     
     for match_id, bet_info in stale_bets.items():
-        # Get the stored Sofascore ID for lookup
         sofascored_id = bet_info.get('sofascored_id', match_id) 
 
-        # Use the robust fetcher with the Sofascore ID
         match_data = robust_get_finished_match_details(sofascored_id)
         
         if not match_data:
@@ -487,16 +572,13 @@ def check_and_resolve_stale_bets():
         
         successful_api_call = True 
 
-        # Check the status from the reliably fetched match_data
         status_description = match_data.status.description.upper()
         
         if 'FINISHED' in status_description or 'ENDED' in status_description:
-            # Use the final score from the reliably fetched match_data
             final_score = f"{match_data.home_score.current or 0}-{match_data.away_score.current or 0}"
             match_name = bet_info.get('match_name', f"Match {match_id}")
             bet_type = bet_info.get('bet_type', 'unknown')
             
-            # 🟢 Retrieve the corrected info from Firebase
             country_name = bet_info.get('country', 'N/A') 
             league_name = bet_info.get('league', 'N/A') 
             
@@ -507,8 +589,6 @@ def check_and_resolve_stale_bets():
             #if bet_type == BET_TYPE_80_MINUTE:
                 #bet_score = bet_info.get('80_score')
                 #outcome = 'win' if final_score == bet_score else 'loss'
-                
-                ## 🟢 MODIFIED: Use corrected league/country info in Telegram message
                 #message = (
                     #f"🏁 **FINAL RESULT - 80' Bet**\n"
                     #f"⚽ {match_name}\n"
@@ -529,7 +609,6 @@ def check_and_resolve_stale_bets():
                     #elif total_goals < over_line: outcome = 'loss'
                     #else: outcome = 'push'
                         
-                    ## 🟢 MODIFIED: Use corrected league/country info in Telegram message
                     #message = (
                         #f"🏁 **FINAL RESULT - 32' Over Bet**\n"
                         #f"⚽ {match_name}\n"
@@ -543,15 +622,10 @@ def check_and_resolve_stale_bets():
                     #message = f"⚠️ FINAL RESULT: {match_name}\n❌ Bet could not be resolved due to score format issue."
             # 32_over Bet Block End
 
-            # The only bet type that should reach this resolution function now is '32_over' if it was unblocked.
-            # If no bet type is unblocked, this block will do nothing and just continue to the next bet.
             
             if outcome and outcome != 'error':
                 if send_telegram(message):
-                    # CHANGED: firebase_manager.move_to_resolved -> local_file_manager.move_to_resolved
                     local_file_manager.move_to_resolved(match_id, bet_info, outcome)
-                    # We only delete the tracked match here if the bet was successfully resolved
-                    # CHANGED: firebase_manager.delete_tracked_match -> local_file_manager.delete_tracked_match
                     local_file_manager.delete_tracked_match(match_id) 
                 time.sleep(1)
         
@@ -559,14 +633,12 @@ def check_and_resolve_stale_bets():
             logger.info(f"Match {match_id} is stale but not yet finished. Current status: {status_description}. Retrying later.")
 
     if successful_api_call:
-        # CHANGED: firebase_manager.update_last_api_call -> local_file_manager.update_last_api_call
         local_file_manager.update_last_api_call()
         
 def run_bot_cycle():
     """Run one complete cycle of the bot"""
     logger.info("Starting bot cycle...")
     
-    # CHANGED: firebase_manager.db -> local_file_manager
     if not SOFASCORE_CLIENT or not local_file_manager:
         logger.error("Services are not initialized. Skipping cycle.")
         return
