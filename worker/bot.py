@@ -1,3 +1,5 @@
+# bot.py
+
 import requests
 import os
 import json
@@ -12,8 +14,6 @@ from esd.sofascore import SofascoreClient, EntityType
 # --- GLOBAL VARIABLES ---
 SOFASCORE_CLIENT = None 
 firebase_manager = None 
-# 🟢 ENHANCEMENT: New in-memory store for tracking live match state
-LOCAL_TRACKED_MATCHES = {} 
 
 # Set up logging
 logging.basicConfig(
@@ -36,10 +36,25 @@ FIREBASE_CREDENTIALS_JSON_STRING = os.getenv("FIREBASE_CREDENTIALS_JSON")
 SLEEP_TIME = 30
 FIXTURE_API_INTERVAL = 900
 MINUTES_REGULAR_BET = [36, 37]
+# 32_over Bet Block Start
+#MINUTES_32_MINUTE_BET = [32, 33]
+# 32_over Bet Block End
+# 80_minute Bet Block Start
+#MINUTES_80_MINUTE_BET = [79, 80]
+# 80_minute Bet Block End
 BET_TYPE_REGULAR = 'regular'
+# 32_over Bet Block Start
+#BET_TYPE_32_OVER = '32_over' 
+# 32_over Bet Block End
+# 80_minute Bet Block Start
+#BET_TYPE_80_MINUTE = '80_minute'
+# 80_minute Bet Block End
 STATUS_LIVE = ['LIVE', '1H', '2H', 'ET', 'P']
 STATUS_HALFTIME = 'HT'
 STATUS_FINISHED = ['FT', 'AET', 'PEN'] 
+# 80_minute Bet Block Start
+#BET_SCORES_80_MINUTE = ['3-1','2-0']
+# 80_minute Bet Block End
 MAX_FETCH_RETRIES = 3 
 BET_RESOLUTION_WAIT_MINUTES = 180 
 
@@ -117,10 +132,28 @@ class FirebaseManager:
             return None
     # --- END EFFICIENT LOOKUP METHODS ---
             
-    # 🔴 REMOVED: Replaced by global LOCAL_TRACKED_MATCHES dictionary
-    # def get_tracked_match(self, match_id): ...
-    # def update_tracked_match(self, match_id, data): ...
-    # def delete_tracked_match(self, match_id): ...
+    def get_tracked_match(self, match_id):
+        if not self.db: return None
+        try:
+            doc = self.db.collection('tracked_matches').document(str(match_id)).get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            logger.error(f"Firestore Error during get_tracked_match: {e}")
+            return None
+
+    def update_tracked_match(self, match_id, data):
+        if not self.db: return
+        try:
+            self.db.collection('tracked_matches').document(str(match_id)).set(data, merge=True)
+        except Exception as e:
+            logger.error(f"Firestore Error during update_tracked_match: {e}")
+            
+    def delete_tracked_match(self, match_id):
+        if not self.db: return
+        try:
+            self.db.collection('tracked_matches').document(str(match_id)).delete()
+        except Exception as e:
+            logger.error(f"Firestore Error during delete_tracked_match: {e}")
 
     def get_stale_unresolved_bets(self, minutes_to_wait=BET_RESOLUTION_WAIT_MINUTES):
         if not self.db: return {}
@@ -132,9 +165,16 @@ class FirebaseManager:
             
             for doc in bets:
                 bet_info = doc.to_dict()
+                # 32_over Bet Block Start
+                # 80_minute Bet Block Start
+                #if bet_info.get('bet_type') in [BET_TYPE_80_MINUTE, BET_TYPE_32_OVER]: 
+                # 80_minute Bet Block End
+                #if bet_info.get('bet_type') in [BET_TYPE_80_MINUTE]: 
+                # 32_over Bet Block End
                 
                 # Check for bet types that need final resolution (currently only 32_over is blocked)
                 # Since the regular bet resolves at HT, we only need to check bets that persist past HT.
+                # If you unblock 32_over or 80_minute, this block should be modified.
                 if bet_info.get('bet_type') not in [BET_TYPE_REGULAR]:
                     placed_at_str = bet_info.get('placed_at')
                     if placed_at_str:
@@ -293,16 +333,20 @@ def get_live_matches():
         logger.error("Sofascore client is not initialized.")
         return []
     try:
+        # 🟢 FIX: Call the correct method signature from client.py
+        # client uses get_events(live=True) to fetch live events.
         live_events = SOFASCORE_CLIENT.get_events(live=True)
         logger.info(f"Fetched {len(live_events)} live matches.")
         return live_events
     except Exception as e:
         logger.error(f"Sofascore API Error fetching live matches: {e}")
         return []
-        
 def get_finished_match_details(sofascored_id):
     """
     Fetches the full event details for a match ID using the active Sofascore client.
+    
+    CRITICAL FIX: Uses the dedicated get_event endpoint instead of the general search, 
+    which was unreliable for finished match IDs.
     """
     if not SOFASCORE_CLIENT: 
         logger.error("Sofascore client is not initialized.")
@@ -311,6 +355,7 @@ def get_finished_match_details(sofascored_id):
     sofascored_id = int(sofascored_id) 
     
     try:
+        # 🟢 FIX: Use the dedicated get_event method (from service.py) for reliable retrieval.
         match_data = SOFASCORE_CLIENT.get_event(sofascored_id)
         
         # Check if the returned object is the correct type and has the ID
@@ -367,19 +412,17 @@ def place_regular_bet(state, fixture_id, score, match_info):
         # Ensure the tracked state is marked as placed to stop re-checking in subsequent runs
         if not state.get('36_bet_placed'):
             state['36_bet_placed'] = True
-            # 🟢 MODIFIED: Update the local store
-            LOCAL_TRACKED_MATCHES[fixture_id] = state 
+            firebase_manager.update_tracked_match(fixture_id, state)
         return
 
     if score in ['1-1', '2-2', '3-3']:
         state['36_bet_placed'] = True
         state['36_score'] = score
-        # 🟢 MODIFIED: Update the local store
-        LOCAL_TRACKED_MATCHES[fixture_id] = state 
-
+        firebase_manager.update_tracked_match(fixture_id, state)
         unresolved_data = {
             'match_name': match_info['match_name'],
             'placed_at': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
+            # 🟢 MODIFIED: Use corrected league/country info
             'league': match_info['league_name'],
             'country': match_info['country'],
             'league_id': match_info['league_id'],
@@ -390,6 +433,7 @@ def place_regular_bet(state, fixture_id, score, match_info):
         }
         firebase_manager.add_unresolved_bet(fixture_id, unresolved_data)
         
+        # 🟢 MODIFIED: Use corrected league/country info in Telegram message
         message = (
             f"⏱️ **36' - {match_info['match_name']}**\n"
             f"🌍 {match_info['country']} | 🏆 {match_info['league_name']}\n"
@@ -399,8 +443,7 @@ def place_regular_bet(state, fixture_id, score, match_info):
         send_telegram(message)
     else:
         state['36_bet_placed'] = True
-        # 🟢 MODIFIED: Update the local store
-        LOCAL_TRACKED_MATCHES[fixture_id] = state 
+        firebase_manager.update_tracked_match(fixture_id, state)
 
 
 def check_ht_result(state, fixture_id, score, match_info):
@@ -440,22 +483,69 @@ def check_ht_result(state, fixture_id, score, match_info):
                     f"🔁 36' Bet LOST"
                 )
             
+        # 32_over Bet Block Start
+        #elif bet_type == BET_TYPE_32_OVER:
+            #logger.info(f"Skipping HT resolution for 32' Over bet on fixture {fixture_id}. Awaiting FT.")
+            #return 
+        # 32_over Bet Block End
+            
         if outcome:
             firebase_manager.move_to_resolved(fixture_id, unresolved_bet_data, outcome)
             send_telegram(message)
     
-    # 🟢 MODIFIED: Clean up the local tracked match store
+    # 🟢 OPTIMIZED: Use targeted lookup instead of checking the cache
     if not firebase_manager.is_bet_unresolved(fixture_id):
-        if fixture_id in LOCAL_TRACKED_MATCHES:
-            del LOCAL_TRACKED_MATCHES[fixture_id]
-            logger.info(f"Cleaned up local tracking for fixture {fixture_id}.")
+        firebase_manager.delete_tracked_match(fixture_id)
 
+# 80_minute Bet Block Start
+#def place_80_minute_bet(state, fixture_id, score, match_info, actual_minute):
+    #"""Handles placing the new 80' bet."""
+    
+    ## 🟢 OPTIMIZED: Use direct lookup instead of full collection scan
+    #if firebase_manager.is_bet_unresolved(fixture_id):
+        #logger.info(f"80_minute bet already exists in 'unresolved_bets' for fixture {fixture_id}. Skipping placement and Telegram message.")
+        ## Ensure the tracked state is marked as placed to stop re-checking in subsequent runs
+        #if not state.get('80_bet_placed'):
+            #state['80_bet_placed'] = True
+            #firebase_manager.update_tracked_match(fixture_id, state)
+        #return
+
+    #if score in BET_SCORES_80_MINUTE:
+        #state['80_bet_placed'] = True
+        #state['80_score'] = score
+        #firebase_manager.update_tracked_match(fixture_id, state)
+        #unresolved_data = {
+            #'match_name': match_info['match_name'],
+            #'placed_at': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
+            ## 🟢 MODIFIED: Use corrected league/country info
+            #'league': match_info['league_name'],
+            #'country': match_info['country'],
+            #'league_id': match_info['league_id'],
+            #'bet_type': BET_TYPE_80_MINUTE,
+            #'80_score': score,
+            #'fixture_id': fixture_id,
+            #'sofascored_id': fixture_id 
+        #}
+        #firebase_manager.add_unresolved_bet(fixture_id, unresolved_data)
+        
+        ## 🟢 MODIFIED: Use corrected league/country info in Telegram message
+        #message = (
+            #f"⏱️ **80' - {match_info['match_name']}**\n"
+            #f"🌍 {match_info['country']} | 🏆 {match_info['league_name']}\n"
+            #f"🔢 Score: {score}\n"
+            #f"🎯 80' Correct Score Bet Placed for Full Time"
+        #)
+        #send_telegram(message)
+    #else:
+        #state['80_bet_placed'] = True
+        #firebase_manager.update_tracked_match(fixture_id, state)
+# 80_minute Bet Block End
 
 def process_live_match(match):
     """
     Processes a single live match using the Sofascore object structure.
     """
-    fixture_id = str(match.id) # Ensure ID is string for dictionary key
+    fixture_id = match.id 
     match_name = f"{match.home_team.name} vs {match.away_team.name}"
     minute = match.total_elapsed_minutes 
     status_description = match.status.description.upper()
@@ -474,20 +564,32 @@ def process_live_match(match):
     if status.upper() not in STATUS_LIVE and status.upper() != STATUS_HALFTIME: return
     if minute is None and status.upper() not in [STATUS_HALFTIME]: return
     
-    # 🟢 ENHANCEMENT: Use the global in-memory store instead of Firestore for tracked matches
-    state = LOCAL_TRACKED_MATCHES.get(fixture_id) or {
+    state = firebase_manager.get_tracked_match(fixture_id) or {
         '36_bet_placed': False,
+        # 32_over Bet Block Start
+        #'32_bet_placed': False, 
+        # 32_over Bet Block End
+        # 80_minute Bet Block Start
+        #'80_bet_placed': False,
+        # 80_minute Bet Block End
         '36_score': None,
+        # 80_minute Bet Block Start
+        #'80_score': None,
+        # 80_minute Bet Block End
     }
-    # 🟢 Store or update the initial/current state in the local store
-    LOCAL_TRACKED_MATCHES[fixture_id] = state
-
+    
+    # 🟢 Extraction is already correct here (Country Name is Category Name)
     match_info = {
         'match_name': match_name,
         'league_name': match.tournament.name if hasattr(match, 'tournament') else 'N/A',
         'country': match.tournament.category.name if hasattr(match, 'tournament') and hasattr(match.tournament, 'category') else 'N/A', 
         'league_id': match.tournament.id if hasattr(match, 'tournament') else 'N/A'
     }
+        
+    # 32_over Bet Block Start
+    #if status.upper() == '1H' and minute in MINUTES_32_MINUTE_BET and not state.get('32_bet_placed'):
+        #place_32_over_bet(state, fixture_id, score, match_info) 
+    # 32_over Bet Block End
         
     if status.upper() == '1H' and minute in MINUTES_REGULAR_BET and not state.get('36_bet_placed'):
         place_regular_bet(state, fixture_id, score, match_info)
@@ -496,11 +598,14 @@ def process_live_match(match):
         # Only check HT result if an unresolved bet exists (to avoid unnecessary HT checks)
         check_ht_result(state, fixture_id, score, match_info)
         
-    # 🟢 MODIFIED: Clean up the local tracked match if it's finished and all bets are resolved/cleared
+    # 80_minute Bet Block Start
+    #elif status.upper() == '2H' and minute is not None and minute >= 79 and not state.get('80_bet_placed'):
+        #place_80_minute_bet(state, fixture_id, score, match_info, minute)
+    # 80_minute Bet Block End
+    
+    # Clean up the tracked match if it's finished and all bets are resolved/cleared
     if status in STATUS_FINISHED and not firebase_manager.is_bet_unresolved(fixture_id): # OPTIMIZED
-        if fixture_id in LOCAL_TRACKED_MATCHES:
-            del LOCAL_TRACKED_MATCHES[fixture_id]
-            logger.info(f"Cleaned up local tracking for finished fixture {fixture_id}.")
+        firebase_manager.delete_tracked_match(fixture_id)
 
 
 def check_and_resolve_stale_bets():
@@ -557,16 +662,55 @@ def check_and_resolve_stale_bets():
             outcome = None
             message = ""
 
-            # Currently, only 'regular' bets resolve at HT. If you unblock other bet types
-            # that resolve at FT, their resolution logic would go here.
+            # 80_minute Bet Block Start
+            #if bet_type == BET_TYPE_80_MINUTE:
+                #bet_score = bet_info.get('80_score')
+                #outcome = 'win' if final_score == bet_score else 'loss'
+                
+                ## 🟢 MODIFIED: Use corrected league/country info in Telegram message
+                #message = (
+                    #f"🏁 **FINAL RESULT - 80' Bet**\n"
+                    #f"⚽ {match_name}\n"
+                    #f"🌍 {country_name} | 🏆 {league_name}\n"
+                    #f"🔢 Final Score: {final_score}\n"
+                    #f"🎯 Bet on 80' Score: {bet_score}\n"
+                    #f"📊 Outcome: {'✅ WON' if outcome == 'win' else '❌ LOST'}"
+                #)
+            # 80_minute Bet Block End
+            # 32_over Bet Block Start
+            #elif bet_type == BET_TYPE_32_OVER:
+                #over_line = bet_info.get('over_line')
+                #try:
+                    #home_goals, away_goals = map(int, final_score.split('-'))
+                    #total_goals = home_goals + away_goals
+                    
+                    #if total_goals > over_line: outcome = 'win'
+                    #elif total_goals < over_line: outcome = 'loss'
+                    #else: outcome = 'push'
+                        
+                    ## 🟢 MODIFIED: Use corrected league/country info in Telegram message
+                    #message = (
+                        #f"🏁 **FINAL RESULT - 32' Over Bet**\n"
+                        #f"⚽ {match_name}\n"
+                        #f"🌍 {country_name} | 🏆 {league_name}\n"
+                        #f"🔢 Final Score: {final_score}\n"
+                        #f"🎯 Bet: Over {over_line}\n"
+                        #f"📊 Outcome: {'✅ WON' if outcome == 'win' else '❌ LOST' if outcome == 'loss' else '➖ PUSH'}"
+                    #)
+                #except ValueError:
+                    #outcome = 'error'
+                    #message = f"⚠️ FINAL RESULT: {match_name}\n❌ Bet could not be resolved due to score format issue."
+            # 32_over Bet Block End
+
+            # The only bet type that should reach this resolution function now is '32_over' if it was unblocked.
+            # If no bet type is unblocked, this block will do nothing and just continue to the next bet.
             
             if outcome and outcome != 'error':
                 if send_telegram(message):
                     firebase_manager.move_to_resolved(match_id, bet_info, outcome)
-                    # 🟢 MODIFIED: Clean up the local tracked match if it still exists
-                    if match_id in LOCAL_TRACKED_MATCHES:
-                        del LOCAL_TRACKED_MATCHES[match_id] 
-                    time.sleep(1)
+                    # We only delete the tracked match here if the bet was successfully resolved
+                    firebase_manager.delete_tracked_match(match_id) 
+                time.sleep(1)
         
         else:
             logger.info(f"Match {match_id} is stale but not yet finished. Current status: {status_description}. Retrying later.")
@@ -589,7 +733,7 @@ def run_bot_cycle():
     
     check_and_resolve_stale_bets()
     
-    logger.info(f"Bot cycle completed. Currently tracking {len(LOCAL_TRACKED_MATCHES)} matches locally.")
+    logger.info("Bot cycle completed.")
 
 if __name__ == "__main__":
     if initialize_bot_services():
