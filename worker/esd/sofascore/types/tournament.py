@@ -44,8 +44,8 @@ class Tournament:
     slug: str = field(default=None)
     # primaryColorHex: str
     # secondaryColorHex: str
-    category: Category = field(default_factory=Category)  # 🟢 UNCOMMENTED AND ADDED DEFAULT
-    # userCount: int
+    category: Category = field(default_factory=Category)
+    userCount: int = field(default=0) # 🟢 UNCOMMENTED/ADDED for filtering
     # displayInverseHomeAwayTeams: bool
 
 
@@ -65,8 +65,8 @@ def parse_tournament(data: dict) -> Tournament:
         slug=data.get("slug", None),
         # primaryColorHex=data.get("primaryColorHex"),
         # secondaryColorHex=data.get("secondaryColorHex"),
-        category=parse_category(data.get("category", {})),  # 🟢 UNCOMMENTED AND IMPLEMENTED
-        # userCount=data.get("userCount"),
+        category=parse_category(data.get("category", {})),
+        userCount=data.get("userCount", 0), # 🟢 UNCOMMENTED/ADDED with default value
         # displayInverseHomeAwayTeams=data.get("displayInverseHomeAwayTeams"),
     )
 
