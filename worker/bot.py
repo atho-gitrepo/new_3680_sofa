@@ -43,6 +43,11 @@ STATUS_FINISHED = ['FT', 'AET', 'PEN']
 MAX_FETCH_RETRIES = 3 
 BET_RESOLUTION_WAIT_MINUTES = 180 
 
+# --- 🟢 NEW FILTER CONSTANTS ---
+MIN_USER_COUNT = 500  # Minimum followers to consider a league professional
+AMATEUR_KEYWORDS = ['youth', 'amateur', 'reserve', 'friendly', 'u23', 'u21', 'u19', 'liga de reservas']
+# -------------------------------
+
 # =========================================================
 # 📌 INITIALIZATION FUNCTIONS
 # =========================================================
@@ -457,6 +462,25 @@ def process_live_match(match):
     """
     fixture_id = str(match.id) # Ensure ID is string for dictionary key
     match_name = f"{match.home_team.name} vs {match.away_team.name}"
+    
+    # =========================================================
+    # 🟢 AMATEUR TOURNAMENT FILTER LOGIC
+    # =========================================================
+    tournament = match.tournament
+
+    # 1. Filter by low fan engagement (userCount)
+    if hasattr(tournament, 'userCount') and tournament.userCount < MIN_USER_COUNT:
+        logger.info(f"Skipping low-interest/amateur tournament (User Count: {tournament.userCount}): {match_name} in {tournament.name}")
+        return # Skip this match
+        
+    # 2. Filter by name keywords
+    league_name = tournament.name.lower() if tournament.name else ''
+    
+    if any(keyword in league_name for keyword in AMATEUR_KEYWORDS):
+        logger.info(f"Skipping youth/amateur league based on name: {match_name} in {tournament.name}")
+        return # Skip this match
+    # =========================================================
+
     minute = match.total_elapsed_minutes 
     status_description = match.status.description.upper()
     status = 'N/A' 
@@ -484,9 +508,9 @@ def process_live_match(match):
 
     match_info = {
         'match_name': match_name,
-        'league_name': match.tournament.name if hasattr(match, 'tournament') else 'N/A',
-        'country': match.tournament.category.name if hasattr(match, 'tournament') and hasattr(match.tournament, 'category') else 'N/A', 
-        'league_id': match.tournament.id if hasattr(match, 'tournament') else 'N/A'
+        'league_name': tournament.name if hasattr(match, 'tournament') else 'N/A',
+        'country': tournament.category.name if hasattr(match, 'tournament') and hasattr(tournament, 'category') else 'N/A', 
+        'league_id': tournament.id if hasattr(match, 'tournament') else 'N/A'
     }
         
     if status.upper() == '1H' and minute in MINUTES_REGULAR_BET and not state.get('36_bet_placed'):
