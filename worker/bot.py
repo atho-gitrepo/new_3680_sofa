@@ -44,7 +44,7 @@ MAX_FETCH_RETRIES = 3
 BET_RESOLUTION_WAIT_MINUTES = 180 
 
 # --- 🟢 NEW FILTER CONSTANTS ---
-MIN_USER_COUNT = 300  # Minimum followers to consider a league professional
+MIN_USER_COUNT = 0  # Minimum followers to consider a league professional
 AMATEUR_KEYWORDS = ['amateur', 'reserve', 'u21', 'u19', 'liga de reservas']
 # -------------------------------
 
