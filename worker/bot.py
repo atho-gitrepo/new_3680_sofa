@@ -253,7 +253,7 @@ def initialize_bot_services():
         return False
         
     logger.info("All bot services initialized successfully.")
-    send_telegram("🚀 Football Betting Bot Initialized Successfully! Starting monitoring.")
+    send_telegram("⚽️Football Betting Bot Initialized Successfully! Starting monitoring.⚽️")
     return True
     
 def shutdown_bot():
