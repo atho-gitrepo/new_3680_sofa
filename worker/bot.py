@@ -45,7 +45,7 @@ BET_RESOLUTION_WAIT_MINUTES = 180
 
 # --- 🟢 NEW FILTER CONSTANTS ---
 MIN_USER_COUNT = 0  # Minimum followers to consider a league professional
-AMATEUR_KEYWORDS = ['Amateur', 'reserve', 'u17', 'u21', 'u19', 'liga de reservas']
+AMATEUR_KEYWORDS = ['Amateur', 'Reserve','U17','U21','U19','liga de reservas']
 # -------------------------------
 
 # =========================================================
