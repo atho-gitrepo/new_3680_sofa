@@ -4,16 +4,25 @@ import json
 import time
 import logging
 from datetime import datetime, timedelta
+from typing import Dict, Any, Optional # 🟢 NEW: Added typing imports
 import firebase_admin
 from firebase_admin import credentials, firestore
 # Correct import structure for your local library
-from esd.sofascore import SofascoreClient, EntityType 
+# 🟢 UPDATED: Import the new types and parser
+from esd.sofascore import (
+    SofascoreClient, 
+    EntityType, 
+    TeamTournamentStats, 
+    parse_team_tournament_stats
+) 
 
 # --- GLOBAL VARIABLES ---
 SOFASCORE_CLIENT = None 
 firebase_manager = None 
 # 🟢 ENHANCEMENT: New in-memory store for tracking live match state
 LOCAL_TRACKED_MATCHES = {} 
+# 🟢 NEW: Cache for expensive, semi-static API calls (Team Tournament Stats)
+TEAM_STATS_CACHE: Dict[str, TeamTournamentStats] = {}
 
 # Set up logging
 logging.basicConfig(
@@ -43,8 +52,9 @@ STATUS_FINISHED = ['FT', 'AET', 'PEN']
 MAX_FETCH_RETRIES = 3 
 BET_RESOLUTION_WAIT_MINUTES = 180 
 
-# --- 🟢 UPDATED FILTER CONSTANTS (USER COUNT REMOVED) ---
-# Note: You can still adjust this list if new amateur terms appear.
+# --- 🟢 UPDATED FILTER CONSTANTS ---
+# Max total goals averaged (Scored + Conceded) for the team over the season
+MAX_GOAL_AVERAGE: float = 2.38
 AMATEUR_KEYWORDS = [
     'amateur', 'youth', 'reserve', 'friendly', 'u23', 'u21', 'u19', 
     'liga de reservas', 'division b', 'm-league', 'liga pro','u17'
@@ -125,11 +135,6 @@ class FirebaseManager:
             return None
     # --- END EFFICIENT LOOKUP METHODS ---
             
-    # 🔴 REMOVED: Replaced by global LOCAL_TRACKED_MATCHES dictionary
-    # def get_tracked_match(self, match_id): ...
-    # def update_tracked_match(self, match_id, data): ...
-    # def delete_tracked_match(self, match_id): ...
-
     def get_stale_unresolved_bets(self, minutes_to_wait=BET_RESOLUTION_WAIT_MINUTES):
         if not self.db: return {}
         try:
@@ -308,6 +313,38 @@ def get_live_matches():
         logger.error(f"Sofascore API Error fetching live matches: {e}")
         return []
         
+# 🟢 NEW: Function to fetch and cache team goal averages
+def get_team_goal_averages(team_id: int, tournament_id: int) -> Optional[TeamTournamentStats]:
+    """
+    Fetches the team's season-long average goals for a specific league, using a cache.
+    """
+    global TEAM_STATS_CACHE
+    cache_key = f"{team_id}-{tournament_id}"
+
+    if cache_key in TEAM_STATS_CACHE:
+        return TEAM_STATS_CACHE[cache_key]
+
+    if not SOFASCORE_CLIENT or not team_id or not tournament_id:
+        logger.warning(f"Cannot fetch stats: Client not initialized or missing IDs: Team {team_id}, Tournament {tournament_id}")
+        return None
+
+    # Fetch raw data from SofascoreClient (delegates to SofascoreService)
+    raw_stats_data = SOFASCORE_CLIENT.get_team_tournament_stats(team_id, tournament_id)
+
+    if raw_stats_data:
+        try:
+            # Parse the raw data using the new parser
+            stats = parse_team_tournament_stats(team_id, tournament_id, raw_stats_data)
+            TEAM_STATS_CACHE[cache_key] = stats
+            return stats
+        except Exception as e:
+            logger.error(f"Error parsing stats for Team {team_id} (Tournament {tournament_id}): {e}")
+            return None
+    else:
+        logger.warning(f"No raw stats data returned for Team {team_id} in Tournament {tournament_id}.")
+        return None
+
+# ... (get_finished_match_details and robust_get_finished_match_details remain the same) ...
 def get_finished_match_details(sofascored_id):
     """
     Fetches the full event details for a match ID using the active Sofascore client.
@@ -366,6 +403,8 @@ def robust_get_finished_match_details(sofascored_id):
         
     return None
 
+
+# 🟢 UPDATED: place_regular_bet function (no change required, relies on filtering in process_live_match)
 def place_regular_bet(state, fixture_id, score, match_info):
     """Handles placing the initial 36' bet."""
     
@@ -411,6 +450,7 @@ def place_regular_bet(state, fixture_id, score, match_info):
         LOCAL_TRACKED_MATCHES[fixture_id] = state 
 
 
+# ... (check_ht_result remains the same) ...
 def check_ht_result(state, fixture_id, score, match_info):
     """Checks the result of all placed bets at halftime, skipping 32' over bets."""
     
@@ -461,15 +501,16 @@ def check_ht_result(state, fixture_id, score, match_info):
 
 def process_live_match(match):
     """
-    Processes a single live match using the Sofascore object structure.
+    Processes a single live match using the Sofascore object structure,
+    applying both the amateur/youth filter and the MAX_GOAL_AVERAGE filter.
     """
     fixture_id = str(match.id) # Ensure ID is string for dictionary key
     match_name = f"{match.home_team.name} vs {match.away_team.name}"
+    tournament = match.tournament
     
     # =========================================================
-    # 🟢 AMATEUR TOURNAMENT FILTER LOGIC (KEYWORD ONLY)
+    # 1. AMATEUR TOURNAMENT FILTER LOGIC
     # =========================================================
-    tournament = match.tournament
     category_name = tournament.category.name if hasattr(tournament, 'category') and tournament.category else ''
     
     # Concatenate ALL relevant names into a single string for comprehensive filtering
@@ -480,14 +521,51 @@ def process_live_match(match):
         f"{match.away_team.name}"
     ).lower()
 
-    # 1. Check for keywords in the combined string (Country, League, and both Team Names)
     if any(keyword in full_filter_text for keyword in AMATEUR_KEYWORDS):
-        
-        # 🟢 FIX FOR SYNTAXERROR: Move the .replace('\n', ' ') operation outside of the f-string's expression brackets.
         cleaned_text = full_filter_text.replace('\n', ' ')
         logger.info(f"Skipping amateur/youth league based on keyword found in: {cleaned_text}")
-        
         return # Skip this match
+
+    # =========================================================
+    # 2. 🟢 NEW: MAX GOAL AVERAGE FILTER LOGIC
+    # =========================================================
+    
+    home_team_id = match.home_team.id
+    away_team_id = match.away_team.id
+    league_id = tournament.id
+
+    # a) Get stats for the home team
+    home_stats = get_team_goal_averages(home_team_id, league_id)
+    if home_stats and home_stats.total_average_goals >= MAX_GOAL_AVERAGE:
+        logger.info(
+            f"Skipping match {match_name}: Home team avg goals ({home_stats.total_average_goals:.2f}) "
+            f"is >= {MAX_GOAL_AVERAGE}"
+        )
+        return
+
+    # b) Get stats for the away team
+    away_stats = get_team_goal_averages(away_team_id, league_id)
+    if away_stats and away_stats.total_average_goals >= MAX_GOAL_AVERAGE:
+        logger.info(
+            f"Skipping match {match_name}: Away team avg goals ({away_stats.total_average_goals:.2f}) "
+            f"is >= {MAX_GOAL_AVERAGE}"
+        )
+        return
+        
+    if not home_stats or not away_stats:
+        # If we can't get reliable stats for both teams, log a warning and skip
+        logger.warning(
+            f"Skipping match {match_name}: Could not retrieve reliable average goal stats for both teams. "
+            "Might be missing data for a new season or a niche league."
+        )
+        return
+    
+    logger.info(
+        f"Goal Averages OK for {match_name}: "
+        f"Home: {home_stats.total_average_goals:.2f}, "
+        f"Away: {away_stats.total_average_goals:.2f} (Max: {MAX_GOAL_AVERAGE})"
+    )
+    
     # =========================================================
 
     minute = match.total_elapsed_minutes 
@@ -519,7 +597,7 @@ def process_live_match(match):
         'match_name': match_name,
         'league_name': tournament.name if hasattr(match, 'tournament') else 'N/A',
         'country': tournament.category.name if hasattr(match, 'tournament') and hasattr(tournament, 'category') else 'N/A', 
-        'league_id': tournament.id if hasattr(match, 'tournament') else 'N/A'
+        'league_id': league_id
     }
         
     if status.upper() == '1H' and minute in MINUTES_REGULAR_BET and not state.get('36_bet_placed'):
@@ -590,8 +668,7 @@ def check_and_resolve_stale_bets():
             outcome = None
             message = ""
 
-            # Currently, only 'regular' bets resolve at HT. If you unblock other bet types
-            # that resolve at FT, their resolution logic would go here.
+            # The logic to resolve bets at Full Time (if you add new bet types later) would go here.
             
             if outcome and outcome != 'error':
                 if send_telegram(message):
