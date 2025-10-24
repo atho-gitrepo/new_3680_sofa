@@ -1,4 +1,3 @@
-This is init.py.
 """
 Contains the types for the Sofascore service.
 """
