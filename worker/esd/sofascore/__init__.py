@@ -1,78 +1,16 @@
-This is init.py.
 """
-Contains the types for the Sofascore service.
+Sofascore client module.
 """
 
-from .event import Event, parse_events, parse_event
-from .status import StatusType, Status
-from .team import Team, parse_team
-from .player import Player, parse_player
-from .player_attributes import PlayerAttributes, parse_player_attributes
-from .transfer import TransferHistory, parse_transfer_history
-from .match_stats import MatchStats, parse_match_stats
-from .lineup import Lineups, PlayerLineup, TeamColor, TeamLineup, parse_lineups
-from .shot import Shot, parse_shots
-from .tournament import Tournament, parse_tournaments, parse_tournament
-from .season import Season, parse_seasons, parse_season
-from .bracket import Bracket, parse_bracket, parse_brackets
-from .standing import Standing, parse_standing, parse_standings
-from .incident import Incident, IncidentType, parse_incident, parse_incidents
-from .top import TopPlayersMatch, parse_top_players_match
-from .comment import Comment, CommentType, parse_comments
-from .top_tournament_teams import TopTournamentTeams, parse_top_tournament_teams
-from .top_tournament_players import TopTournamentPlayers, parse_top_tournament_players
-from .entity import EntityType
-from .categories import Category
+# Import the main client class
+from .client import SofascoreClient 
 
+# Import and expose the specific type needed from the nested module
+# 🛠️ THE FIX: Changed 'Entity' to 'entity' to match the file name 'entity.py'
+from .types.entity import EntityType 
 
-__all__ = [
-    "Event",
-    "parse_events",
-    "parse_event",
-    "Tournament",
-    "parse_tournaments",
-    "parse_tournament",
-    "TopTournamentPlayers",
-    "parse_top_tournament_players",
-    "TopTournamentTeams",
-    "parse_top_tournament_teams",
-    "Shot",
-    "parse_shots",
-    "Comment",
-    "CommentType",
-    "parse_comments",
-    "TopPlayersMatch",
-    "parse_top_players_match",
-    "Incident",
-    "IncidentType",
-    "parse_incident",
-    "parse_incidents",
-    "Standing",
-    "parse_standing",
-    "parse_standings",
-    "Season",
-    "parse_seasons",
-    "parse_season",
-    "Bracket",
-    "parse_bracket",
-    "parse_brackets",
-    "Team",
-    "parse_team",
-    "Player",
-    "parse_player",
-    "TransferHistory",
-    "parse_transfer_history",
-    "PlayerAttributes",
-    "parse_player_attributes",
-    "MatchStats",
-    "parse_match_stats",
-    "Lineups",
-    "PlayerLineup",
-    "TeamColor",
-    "TeamLineup",
-    "parse_lineups",
-    "EntityType",
-    "Category",
-    "StatusType",
-    "Status",
-]
+# Import the entire types submodule as well (for users who want to access other types)
+from . import types
+
+# Update __all__ to include the new symbols you want to expose at the package level
+__all__ = ["SofascoreClient", "EntityType", "types"]
