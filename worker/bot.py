@@ -43,9 +43,13 @@ STATUS_FINISHED = ['FT', 'AET', 'PEN']
 MAX_FETCH_RETRIES = 3 
 BET_RESOLUTION_WAIT_MINUTES = 180 
 
-# --- 🟢 NEW FILTER CONSTANTS ---
-MIN_USER_COUNT = 0  # Minimum followers to consider a league professional
-AMATEUR_KEYWORDS = ['Amateur', 'Reserve','U17','U21','U19','liga de reservas']
+# --- 🟢 UPDATED FILTER CONSTANTS (USER COUNT REMOVED) ---
+# Note: You can still adjust this list if new amateur terms appear.
+AMATEUR_KEYWORDS = [
+    'amateur', 'youth', 'reserve', 'friendly', 'u23', 'u21', 'u19', 
+    'liga de reservas', 'division b', 'm-league', 'liga pro', 
+    'cup' 
+]
 # -------------------------------
 
 # =========================================================
@@ -253,7 +257,7 @@ def initialize_bot_services():
         return False
         
     logger.info("All bot services initialized successfully.")
-    send_telegram("⚽️Football Betting Bot Initialized Successfully! Starting monitoring.⚽️")
+    send_telegram("🚀 Football Betting Bot Initialized Successfully! Starting monitoring.")
     return True
     
 def shutdown_bot():
@@ -464,20 +468,22 @@ def process_live_match(match):
     match_name = f"{match.home_team.name} vs {match.away_team.name}"
     
     # =========================================================
-    # 🟢 AMATEUR TOURNAMENT FILTER LOGIC
+    # 🟢 AMATEUR TOURNAMENT FILTER LOGIC (KEYWORD ONLY)
     # =========================================================
     tournament = match.tournament
-
-    # 1. Filter by low fan engagement (userCount)
-    if hasattr(tournament, 'userCount') and tournament.userCount < MIN_USER_COUNT:
-        logger.info(f"Skipping low-interest/amateur tournament (User Count: {tournament.userCount}): {match_name} in {tournament.name}")
-        return # Skip this match
-        
-    # 2. Filter by name keywords
-    league_name = tournament.name.lower() if tournament.name else ''
+    category_name = tournament.category.name if hasattr(tournament, 'category') and tournament.category else ''
     
-    if any(keyword in league_name for keyword in AMATEUR_KEYWORDS):
-        logger.info(f"Skipping youth/amateur league based on name: {match_name} in {tournament.name}")
+    # Concatenate ALL relevant names into a single string for comprehensive filtering
+    full_filter_text = (
+        f"{tournament.name} "
+        f"{category_name} "
+        f"{match.home_team.name} "
+        f"{match.away_team.name}"
+    ).lower()
+
+    # 1. Check for keywords in the combined string (Country, League, and both Team Names)
+    if any(keyword in full_filter_text for keyword in AMATEUR_KEYWORDS):
+        logger.info(f"Skipping amateur/youth league based on keyword found in: {full_filter_text.replace('\n', ' ')}")
         return # Skip this match
     # =========================================================
 
