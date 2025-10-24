@@ -483,7 +483,11 @@ def process_live_match(match):
 
     # 1. Check for keywords in the combined string (Country, League, and both Team Names)
     if any(keyword in full_filter_text for keyword in AMATEUR_KEYWORDS):
-        logger.info(f"Skipping amateur/youth league based on keyword found in: {full_filter_text.replace('\n', ' ')}")
+        
+        # 🟢 FIX FOR SYNTAXERROR: Move the .replace('\n', ' ') operation outside of the f-string's expression brackets.
+        cleaned_text = full_filter_text.replace('\n', ' ')
+        logger.info(f"Skipping amateur/youth league based on keyword found in: {cleaned_text}")
+        
         return # Skip this match
     # =========================================================
 
