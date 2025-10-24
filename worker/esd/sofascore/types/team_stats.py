@@ -1,65 +1,104 @@
-from dataclasses import dataclass, field
+# esd/sofascore/types/team_stats.py
+
+from __future__ import annotations
+from dataclasses import dataclass
 from typing import Optional, Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class TeamTournamentStats:
     """
-    Data class to hold a team's season-long statistics within a specific tournament.
-    
-    This is what the bot requires to check the 2.38 average goal condition.
+    Represents a team's season-long statistics in a specific tournament (league).
+    Used primarily for the average goals filter.
     """
-
-    # Team ID and Tournament ID for context
-    team_id: int = field(default=0)
-    tournament_id: int = field(default=0)
+    team_id: int
+    tournament_id: int
+    matches_played: int = 0
+    goals_scored_total: float = 0.0
+    goals_conceded_total: float = 0.0
+    goals_scored_average: float = 0.0
+    goals_conceded_average: float = 0.0
+    total_average_goals: float = 0.0
     
-    # Crucial fields for the betting condition (Total Average = Scored + Conceded)
-    average_goals_scored: float = field(default=0.0)
-    average_goals_conceded: float = field(default=0.0)
-    
-    # Optional fields you might find in the Sofascore API response (for completeness)
-    average_cards_total: Optional[float] = field(default=None)
-    average_corner_kicks: Optional[float] = field(default=None)
-    matches_played: Optional[int] = field(default=None)
-    
-    @property
-    def total_average_goals(self) -> float:
-        """
-        Calculates the combined average of goals scored and conceded.
-        This is the value checked against the MAX_GOAL_AVERAGE (2.38).
-        """
-        return self.average_goals_scored + self.average_goals_conceded
+    # Raw data for inspection
+    raw_data: Optional[Dict[str, Any]] = None
 
 
-def parse_team_tournament_stats(team_id: int, tournament_id: int, data: Dict[str, Any]) -> TeamTournamentStats:
+def parse_team_tournament_stats(
+    team_id: int, 
+    tournament_id: int, 
+    data: Dict[str, Any]
+) -> TeamTournamentStats:
     """
-    Parses the raw dictionary response from the Sofascore API endpoint 
-    (e.g., /team/{team_id}/tournament/{tournament_id}/statistics) 
-    into the TeamTournamentStats object.
-    
+    Parses the raw JSON data from the team tournament stats endpoint 
+    into a TeamTournamentStats object.
+
     Args:
         team_id (int): The ID of the team.
         tournament_id (int): The ID of the tournament.
-        data (Dict[str, Any]): The raw statistics data retrieved from the Sofascore API.
+        data (Dict[str, Any]): The raw JSON response.
 
     Returns:
         TeamTournamentStats: The parsed statistics object.
     """
     
-    # Sofascore data often nests the actual statistics inside a 'statistics' key.
-    stats = data.get('statistics', data)
-
-    # 💡 IMPORTANT: These key names must exactly match what the Sofascore API returns 
-    # for the team statistics endpoint. Adjust if necessary after inspecting the response.
-    
-    return TeamTournamentStats(
-        team_id=team_id,
-        tournament_id=tournament_id,
-        average_goals_scored=stats.get("averageGoalsScored", 0.0),
-        average_goals_conceded=stats.get("averageGoalsConceded", 0.0),
-        
-        # Example of other fields you might parse
-        average_cards_total=stats.get("averageTotalCards", None),
-        average_corner_kicks=stats.get("averageCornerKicks", None),
-        matches_played=stats.get("matchesPlayed", None),
+    # 1. Initialize with IDs and raw data
+    stats = TeamTournamentStats(
+        team_id=team_id, 
+        tournament_id=tournament_id, 
+        raw_data=data
     )
+    
+    # 2. Navigate the nested JSON structure to find the "overall" stats
+    # The statistics are usually structured by groups (e.g., 'overall', 'home', 'away')
+    try:
+        # Assuming the 'overall' statistics block is what we need for season-long averages
+        stat_blocks = data.get("statistics", {}).get("total", [])
+        
+        overall_stats = next(
+            (block for block in stat_blocks if block.get("type") == "overall"),
+            None
+        )
+
+        if not overall_stats:
+            logger.warning(
+                f"Stats for team {team_id} in tournament {tournament_id} found but 'overall' block is missing."
+            )
+            return stats
+            
+        # 3. Extract key metrics
+        
+        # Matches played: Used as the divisor for calculating averages
+        stats.matches_played = overall_stats.get("matches", 0)
+
+        if stats.matches_played == 0:
+            logger.info(f"Team {team_id} has not played any matches in tournament {tournament_id}.")
+            return stats
+
+        # Goals Scored and Conceded (usually simple integer counts)
+        stats.goals_scored_total = float(overall_stats.get("goalsScored", 0))
+        stats.goals_conceded_total = float(overall_stats.get("goalsConceded", 0))
+        
+        # 4. Calculate Averages
+        
+        # Calculate Scored Average
+        stats.goals_scored_average = stats.goals_scored_total / stats.matches_played
+        
+        # Calculate Conceded Average
+        stats.goals_conceded_average = stats.goals_conceded_total / stats.matches_played
+        
+        # Calculate Total Average (the key filter metric)
+        stats.total_average_goals = stats.goals_scored_average + stats.goals_conceded_average
+        
+        return stats
+
+    except Exception as exc:
+        logger.error(
+            f"Error parsing TeamTournamentStats for Team {team_id} (Tournament {tournament_id}): {exc}",
+            exc_info=True
+        )
+        # Return the partially filled object on error
+        return stats
+
