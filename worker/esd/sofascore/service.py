@@ -10,7 +10,6 @@ import os
 import logging
 import subprocess
 import sys
-from typing import Optional, Dict, Any 
 
 # Add browser installation check
 def install_playwright_browsers():
@@ -78,8 +77,6 @@ from .types import (
     parse_lineups,
     EntityType,
     Category,
-    TeamTournamentStats, 
-    parse_team_tournament_stats,
 )
 
 
@@ -183,34 +180,9 @@ class SofascoreService:
         Destructor to ensure resources are released.
         """
         self.close()
-        
-    def get_team_tournament_stats(self, team_id: int, tournament_id: int) -> Optional[Dict[str, Any]]:
-        """
-        Get the season statistics (including average goals) for a team
-        in a specific tournament.
-
-        Args:
-            team_id (int): The ID of the team.
-            tournament_id (int): The ID of the tournament (league).
-
-        Returns:
-            Optional[Dict[str, Any]]: The raw JSON response data containing the statistics.
-        """
-        try:
-            url = self.endpoints.team_tournament_stats_endpoint(team_id, tournament_id)
-            
-            # Use your existing Playwright/JSON fetching mechanism
-            raw_data = get_json(self.page, url)
-            
-            # The client expects the raw dictionary
-            return raw_data 
-            
-        except Exception as exc:
-            self.logger.error(f"Failed to get team tournament stats for team {team_id} in tournament {tournament_id}: {str(exc)}")
-            # Return None to signal failure
-            return None
 
     def get_event(self, event_id: int) -> Event:
+        # ... (remains the same) ...
         """
         Get the event information.
 
@@ -229,6 +201,7 @@ class SofascoreService:
             raise exc
 
     def get_events(self, date: str = 'today') -> list[Event]:
+        # ... (remains the same) ...
         """
         Get the scheduled events.
 
@@ -248,6 +221,7 @@ class SofascoreService:
             raise exc
 
     def get_live_events(self) -> list[Event]:
+        # ... (remains the same) ...
         """
         Get the live events.
 
@@ -256,23 +230,13 @@ class SofascoreService:
         """
         try:
             url = self.endpoints.live_events_endpoint
-            
-            # 🟢 FIX: Use .get() to safely handle cases where the 'events' key is missing.
-            # If the key is missing (e.g., API returns an empty object), .get() returns 
-            # an empty list [], preventing the KeyError.
-            data = get_json(self.page, url).get("events", []) 
-            
-            if not data:
-                self.logger.info("No live events found in API response.")
-                return []
-                
-            return parse_events(data)
-            
+            return parse_events(get_json(self.page, url)["events"])
         except Exception as exc:
             self.logger.error(f"Failed to get live events: {str(exc)}")
             raise exc
 
     def get_player(self, player_id: int) -> Player:
+        # ... (remains the same) ...
         """
         Get the player information.
 
@@ -296,6 +260,7 @@ class SofascoreService:
             raise exc
 
     def get_player_attributes(self, player_id: int) -> PlayerAttributes:
+        # ... (remains the same) ...
         """
         Get the player attributes.
 
@@ -316,6 +281,7 @@ class SofascoreService:
             raise exc
 
     def get_player_transfer_history(self, player_id: int) -> TransferHistory:
+        # ... (remains the same) ...
         """
         Get the player transfer history.
 
@@ -336,6 +302,7 @@ class SofascoreService:
             raise exc
 
     def get_player_stats(self, player_id: int) -> dict:
+        # ... (remains the same) ...
         """
         TODO: Get the player statistics.
 
@@ -353,6 +320,7 @@ class SofascoreService:
             raise exc
 
     def get_match_lineups(self, event_id: int) -> Lineups:
+        # ... (remains the same) ...
         """
         Get the match lineups.
 
@@ -370,6 +338,7 @@ class SofascoreService:
             raise exc
 
     def get_match_incidents(self, event_id: int) -> list[Incident]:
+        # ... (remains the same) ...
         """
         Get the match incidents.
 
@@ -388,6 +357,7 @@ class SofascoreService:
             raise exc
 
     def get_match_top_players(self, event_id: int) -> TopPlayersMatch:
+        # ... (remains the same) ...
         """
         Get the top players of a match.
 
@@ -405,6 +375,7 @@ class SofascoreService:
             raise exc
 
     def get_match_comments(self, event_id: int) -> list[Comment]:
+        # ... (remains the same) ...
         """
         Get the match comments.
 
@@ -423,6 +394,7 @@ class SofascoreService:
             raise exc
 
     def get_match_stats(self, event_id: int) -> MatchStats:
+        # ... (remains the same) ...
         """
         Get the match statistics.
 
@@ -443,6 +415,7 @@ class SofascoreService:
             raise exc
 
     def get_match_shots(self, event_id: int) -> dict:
+        # ... (remains the same) ...
         """
         Get the match shots.
 
@@ -463,6 +436,7 @@ class SofascoreService:
             raise exc
 
     def get_team(self, team_id: int) -> Team:
+        # ... (remains the same) ...
         """
         Get the team information.
 
@@ -481,6 +455,7 @@ class SofascoreService:
             raise exc
 
     def get_team_players(self, team_id: int) -> list[Player]:
+        # ... (remains the same) ...
         """
         Get the team players.
 
@@ -501,6 +476,7 @@ class SofascoreService:
             raise exc
 
     def get_team_events(self, team_id: int, upcoming: bool, page: int) -> list[Event]:
+        # ... (remains the same) ...
         """
         Get the team events.
 
@@ -523,6 +499,7 @@ class SofascoreService:
             raise exc
 
     def get_tournaments_by_category(self, category_id: Category) -> list[Tournament]:
+        # ... (remains the same) ...
         """
         Get the tournaments by category id.
 
@@ -543,6 +520,7 @@ class SofascoreService:
             raise exc
 
     def get_tournament_seasons(self, tournament_id: int) -> list[Season]:
+        # ... (remains the same) ...
         """
         Get the seasons of a tournament.
 
@@ -563,6 +541,7 @@ class SofascoreService:
     def get_tournament_bracket(
         self, tournament_id: int | Tournament, season_id: int | Season
     ) -> list[Bracket]:
+        # ... (remains the same) ...
         """
         Get the tournament bracket.
 
@@ -588,6 +567,7 @@ class SofascoreService:
     def get_tournament_standings(
         self, tournament_id: int | Tournament, season_id: int | Season
     ) -> list[Standing]:
+        # ... (remains the same) ...
         """
         Get the tournament standings.
 
@@ -613,6 +593,7 @@ class SofascoreService:
     def get_tournament_top_teams(
         self, tournament_id: int | Tournament, season_id: int | Season
     ) -> TopTournamentTeams:
+        # ... (remains the same) ...
         """
         Get different top teams of a tournament.
 
@@ -640,6 +621,7 @@ class SofascoreService:
     def get_tournament_top_players(
         self, tournament_id: int | Tournament, season_id: int | Season
     ) -> TopTournamentPlayers:
+        # ... (remains the same) ...
         """
         Get the top players of the tournament.
 
@@ -669,6 +651,7 @@ class SofascoreService:
     def get_tournament_events(
         self, tournament_id: int, season_id: int, upcoming: bool, page: int
     ) -> list[Event]:
+        # ... (remains the same) ...
         """
         Get the events of a tournament.
 
@@ -685,9 +668,8 @@ class SofascoreService:
             url = self.endpoints.tournament_events_endpoint(
                 tournament_id, season_id, upcoming, page
             )
-            data = get_json(self.page, url)
-            if "events" in data:
-                return parse_events(data["events"])
+            if "events" in get_json(self.page, url):
+                return parse_events(get_json(self.page, url)["events"])
             return []
         except Exception as exc:
             self.logger.error(f"Failed to get events for tournament {tournament_id}: {str(exc)}")
@@ -696,6 +678,7 @@ class SofascoreService:
     def search(
         self, query: str, entity: EntityType = EntityType.ALL
     ) -> list[Event | Team | Player | Tournament]:
+        # ... (remains the same) ...
         """
         Search query for matches, teams, players, and tournaments.
 
