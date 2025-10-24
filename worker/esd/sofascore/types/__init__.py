@@ -1,3 +1,4 @@
+This is init.py.
 """
 Contains the types for the Sofascore service.
 """
@@ -22,8 +23,6 @@ from .top_tournament_teams import TopTournamentTeams, parse_top_tournament_teams
 from .top_tournament_players import TopTournamentPlayers, parse_top_tournament_players
 from .entity import EntityType
 from .categories import Category
-# 🟢 NEW: Import the team tournament stats data structure
-from .team_stats import TeamTournamentStats, parse_team_tournament_stats 
 
 
 __all__ = [
@@ -76,7 +75,4 @@ __all__ = [
     "Category",
     "StatusType",
     "Status",
-    # 🟢 NEW: Add the team tournament stats to the exported symbols
-    "TeamTournamentStats",
-    "parse_team_tournament_stats",
 ]
