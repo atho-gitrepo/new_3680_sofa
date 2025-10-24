@@ -10,7 +10,7 @@ import os
 import logging
 import subprocess
 import sys
-from typing import Optional, Dict, Any # 🟢 NEW: Import for typing the new method
+from typing import Optional, Dict, Any 
 
 # Add browser installation check
 def install_playwright_browsers():
@@ -78,7 +78,6 @@ from .types import (
     parse_lineups,
     EntityType,
     Category,
-    # 🟢 NEW: Import the TeamTournamentStats type (required for type hints)
     TeamTournamentStats, 
     parse_team_tournament_stats,
 )
@@ -185,7 +184,6 @@ class SofascoreService:
         """
         self.close()
         
-    # 🟢 NEW: Method to retrieve team tournament statistics (Average Goals)
     def get_team_tournament_stats(self, team_id: int, tournament_id: int) -> Optional[Dict[str, Any]]:
         """
         Get the season statistics (including average goals) for a team
@@ -258,7 +256,18 @@ class SofascoreService:
         """
         try:
             url = self.endpoints.live_events_endpoint
-            return parse_events(get_json(self.page, url)["events"])
+            
+            # 🟢 FIX: Use .get() to safely handle cases where the 'events' key is missing.
+            # If the key is missing (e.g., API returns an empty object), .get() returns 
+            # an empty list [], preventing the KeyError.
+            data = get_json(self.page, url).get("events", []) 
+            
+            if not data:
+                self.logger.info("No live events found in API response.")
+                return []
+                
+            return parse_events(data)
+            
         except Exception as exc:
             self.logger.error(f"Failed to get live events: {str(exc)}")
             raise exc
