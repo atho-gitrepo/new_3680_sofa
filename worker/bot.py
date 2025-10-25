@@ -379,7 +379,7 @@ def place_regular_bet(state, fixture_id, score, match_info):
             LOCAL_TRACKED_MATCHES[fixture_id] = state 
         return
 
-    if score in ['1-1', '2-0', '2-2']:
+    if score in ['1-1', '2-2', '3-3']:
         state['36_bet_placed'] = True
         state['36_score'] = score
         # 🟢 MODIFIED: Update the local store
