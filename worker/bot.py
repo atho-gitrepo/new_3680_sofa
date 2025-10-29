@@ -47,7 +47,9 @@ BET_RESOLUTION_WAIT_MINUTES = 180
 # Note: You can still adjust this list if new amateur terms appear.
 AMATEUR_KEYWORDS = [
     'amateur', 'youth', 'reserve', 'friendly', 'u23', 'u21', 'u19', 
-    'liga de reservas', 'division b', 'm-league', 'liga pro', 'u17',‘Eliteserien’, ‘NCAA’, ‘Costa Rican Women Premier Division’, ‘Liga de Expansion MX Apertura’, ‘II Lyga’, ‘Ettan Norra’, ‘Pervaya Liga’, ‘Gozo Football League Second Division’
+    'liga de reservas', 'division b', 'm-league', 'liga pro', 'u17',
+    'Eliteserien', 'NCAA', 'Costa Rican Women Premier Division', 'Liga de Expansion MX Apertura', 
+    'II Lyga', 'Ettan Norra', 'Pervaya Liga', 'Gozo Football League Second Division'
 ]
 # -------------------------------
 
