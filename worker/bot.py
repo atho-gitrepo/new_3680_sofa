@@ -43,15 +43,53 @@ STATUS_FINISHED = ['FT', 'AET', 'PEN']
 MAX_FETCH_RETRIES = 3 
 BET_RESOLUTION_WAIT_MINUTES = 180 
 
-# --- 🟢 UPDATED FILTER CONSTANTS (USER COUNT REMOVED) ---
-# Note: You can still adjust this list if new amateur terms appear.
+# =========================================================
+# 🟢 UPDATED FILTER CONSTANTS
+# =========================================================
+
+# --- 1. Explicit Allow List (Overrides Blacklist) ---
+# Add specific league names you want to ALLOW, even if their country is blacklisted (e.g., 'Brazil')
+ALLOWED_LEAGUES = [
+    'Campeonato Brasileiro Série A',
+    'Copa do Brasil' 
+    # Add any other professional Brazilian leagues you want to keep (use full name from Sofascore)
+]
+
+# --- 2. Explicit Country/League Blacklist ---
+# Explicitly exclude countries/leagues known to be high-scoring, high-variance, or amateur.
+EXCLUDED_LEAGUES = [
+    'USA', # General US exclusion
+    'NCAA',
+    'Northeast-10 Conference',
+    'Costa Rican Women Premier Division', 
+    'Liga de Expansion MX Apertura', 
+    'II Lyga', 
+    'Ettan Norra', 
+    'Pervaya Liga', 
+    'Gozo Football League Second Division',
+    'Eliteserien', 
+    
+    # --- Blacklisted Countries/Leagues ---
+    'Poland',
+    'Mexico',
+    'England', 
+    'Colombia',
+    'Women', # Exclude all women's leagues
+    'Friendly', 
+    'Reserve',
+    'Regional League',
+    'Serie C',
+    '3. Liga', # German third division
+    'U19', 'U21', 'U23' # Explicit age-group exclusions
+]
+
+# --- 3. Refined Amateur Keyword Filter ---
+# Keywords to catch general amateur/youth tournaments not covered by the explicit blacklist.
 AMATEUR_KEYWORDS = [
     'amateur', 'youth', 'reserve', 'friendly', 'u23', 'u21', 'u19', 
     'liga de reservas', 'division b', 'm-league', 'liga pro', 'u17',
-    'Eliteserien', 'NCAA', 'Costa Rican Women Premier Division', 'Liga de Expansion MX Apertura', 
-    'II Lyga', 'Ettan Norra', 'Pervaya Liga', 'Gozo Football League Second Division'
 ]
-# -------------------------------
+# =========================================================
 
 # =========================================================
 # 📌 INITIALIZATION FUNCTIONS
@@ -463,29 +501,55 @@ def check_ht_result(state, fixture_id, score, match_info):
 
 def process_live_match(match):
     """
-    Processes a single live match using the Sofascore object structure.
+    Processes a single live match using the Sofascore object structure, with new filtering.
     """
     fixture_id = str(match.id) # Ensure ID is string for dictionary key
     match_name = f"{match.home_team.name} vs {match.away_team.name}"
     
-    # =========================================================
-    # 🟢 AMATEUR TOURNAMENT FILTER LOGIC (KEYWORD ONLY)
-    # =========================================================
     tournament = match.tournament
+    league_name = tournament.name if hasattr(match, 'tournament') else ''
     category_name = tournament.category.name if hasattr(tournament, 'category') and tournament.category else ''
     
-    # Concatenate ALL relevant names into a single string for comprehensive filtering
+    # Concatenate names for general filtering checks
     full_filter_text = (
-        f"{tournament.name} "
-        f"{category_name} "
-        f"{match.home_team.name} "
-        f"{match.away_team.name}"
+        f"{league_name} "
+        f"{category_name}"
     ).lower()
 
-    # 1. Check for keywords in the combined string (Country, League, and both Team Names)
+    # =========================================================
+    # 🟢 FILTER 1: CONDITIONAL BLACKLIST OVERRIDE (For Brazil, etc.)
+    # =========================================================
+    
+    # Check if the country is generally blacklisted (e.g., 'Brazil')
+    country_is_blacklisted = any(keyword.lower() in category_name.lower() for keyword in EXCLUDED_LEAGUES)
+    is_allowed = False
+    
+    # Check if this blacklisted country/match is on the allow list
+    if country_is_blacklisted and any(keyword.lower() in league_name.lower() for keyword in ALLOWED_LEAGUES):
+        # We found a blacklisted country, but the specific league is ALLOWED.
+        is_allowed = True
+        logger.info(f"🟢 ALLOWED: Match {match_name} ({category_name} | {league_name}) is on the explicit ALLOWED list.")
+
+    # =========================================================
+    # 🟢 FILTER 2: EXPLICIT COUNTRY/LEAGUE BLACKLIST LOGIC (Only runs if not allowed)
+    # =========================================================
+    
+    # If the match is NOT explicitly allowed, check for general blacklisting criteria.
+    if not is_allowed:
+        if country_is_blacklisted or \
+           any(keyword.lower() in league_name.lower() for keyword in EXCLUDED_LEAGUES):
+            
+            logger.info(f"Skipping match {match_name}: Explicitly excluded league/country found ({category_name} | {league_name}).")
+            return # Skip this match
+    # =========================================================
+
+
+    # =========================================================
+    # 🟢 FILTER 3: AMATEUR TOURNAMENT FILTER LOGIC (KEYWORD ONLY)
+    # =========================================================
+    # Check for general amateur keywords (Runs last)
     if any(keyword in full_filter_text for keyword in AMATEUR_KEYWORDS):
         
-        # 🟢 FIX FOR SYNTAXERROR: Move the .replace('\n', ' ') operation outside of the f-string's expression brackets.
         cleaned_text = full_filter_text.replace('\n', ' ')
         logger.info(f"Skipping amateur/youth league based on keyword found in: {cleaned_text}")
         
@@ -519,8 +583,8 @@ def process_live_match(match):
 
     match_info = {
         'match_name': match_name,
-        'league_name': tournament.name if hasattr(match, 'tournament') else 'N/A',
-        'country': tournament.category.name if hasattr(match, 'tournament') and hasattr(tournament, 'category') else 'N/A', 
+        'league_name': league_name,
+        'country': category_name, 
         'league_id': tournament.id if hasattr(match, 'tournament') else 'N/A'
     }
         
