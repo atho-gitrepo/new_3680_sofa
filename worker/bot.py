@@ -72,6 +72,14 @@ EXCLUDED_LEAGUES = [
     # --- Blacklisted Countries/Leagues ---
     'Poland',
     'Mexico',
+    'Denmark',
+    'Germany',
+    'Hungary',
+    'Sweden',
+    'Lithuania',
+    'Honduras',
+    'Chile',
+    'Norway',
     'England', 
     'Colombia',
     'Women', # Exclude all women's leagues
