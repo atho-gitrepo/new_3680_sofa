@@ -65,17 +65,22 @@ EXCLUDED_LEAGUES = [
     'Liga de Expansion MX Apertura', 
     'II Lyga', 
     'Ettan Norra', 
-    'Pervaya Liga', 
+    'Pervaya Liga',
+    'Promotion d’Honneur',
     'Gozo Football League Second Division',
     'Eliteserien', 
     
     # --- Blacklisted Countries/Leagues ---
     'Poland',
     'Mexico',
+    'Wales',
+    'Portugal',
     'Denmark',
     'Germany',
     'Hungary',
     'Sweden',
+    'Serbia',
+    'El Salvador',
     'Lithuania',
     'Honduras',
     'Chile',
@@ -84,11 +89,11 @@ EXCLUDED_LEAGUES = [
     'Colombia',
     'Women', # Exclude all women's leagues
     'Friendly', 
-    'Reserve',
+    'Reserves',
     'Regional League',
     'Serie C',
     '3. Liga', # German third division
-    'U19', 'U21', 'U23' # Explicit age-group exclusions
+    'U19','U22', 'U21', 'U23' # Explicit age-group exclusions
 ]
 
 # --- 3. Refined Amateur Keyword Filter ---
