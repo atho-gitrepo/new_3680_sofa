@@ -51,6 +51,7 @@ BET_RESOLUTION_WAIT_MINUTES = 180
 # Add specific league names you want to ALLOW, even if their country is blacklisted (e.g., 'Brazil')
 ALLOWED_LEAGUES = [
     'Campeonato Brasileiro Série A',
+    'Segunda Division, Apertura',
     'Copa do Brasil' 
     # Add any other professional Brazilian leagues you want to keep (use full name from Sofascore)
 ]
