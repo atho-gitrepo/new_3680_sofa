@@ -100,8 +100,8 @@ EXCLUDED_LEAGUES = [
 # --- 3. Refined Amateur Keyword Filter ---
 # Keywords to catch general amateur/youth tournaments not covered by the explicit blacklist.
 AMATEUR_KEYWORDS = [
-    'amateur', 'youth', 'reserve', 'friendly', 'u23', 'u21', 'u19', 
-    'liga de reservas', 'division b', 'm-league', 'liga pro', 'u17',
+    'amateur', 'youth', 'reserves', 'friendly', 'U23', 'U21', 'U19', 
+    'liga de reservas', 'division b', 'm-league', 'liga pro', 'U17',
 ]
 # =========================================================
 
