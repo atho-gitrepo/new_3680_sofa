@@ -68,6 +68,8 @@ EXCLUDED_LEAGUES = [
     'Ettan Norra', 
     'Pervaya Liga',
     'Promotion d’Honneur',
+    'Liga 4',
+    'Eerste Divisie',
     'Gozo Football League Second Division',
     'Eliteserien', 
     
