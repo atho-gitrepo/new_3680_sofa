@@ -83,6 +83,7 @@ EXCLUDED_LEAGUES = [
     'Hungary',
     'Sweden',
     'Serbia',
+    'Cyprus',
     'El Salvador',
     'Lithuania',
     'Honduras',
