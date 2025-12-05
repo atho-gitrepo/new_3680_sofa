@@ -26,11 +26,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("FootballBettingBot")
 
-# Load environment variables
-API_KEY = os.getenv("API_KEY") 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-FIREBASE_CREDENTIALS_JSON_STRING = os.getenv("FIREBASE_CREDENTIALS_JSON")
+# Load environment variables (Stubs for completeness)
+# In a real setup, these would be loaded from .env or your environment
+API_KEY = os.getenv("API_KEY", "DUMMY_API_KEY") 
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "DUMMY_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "DUMMY_CHAT_ID")
+# Use an empty string if not available, FirebaseManager handles this
+FIREBASE_CREDENTIALS_JSON_STRING = os.getenv("FIREBASE_CREDENTIALS_JSON", "") 
 
 # --- CONSTANTS ---
 SLEEP_TIME = 60
@@ -44,42 +46,30 @@ MAX_FETCH_RETRIES = 3
 BET_RESOLUTION_WAIT_MINUTES = 180 
 
 # =========================================================
-# 🟢 UPDATED FILTER CONSTANTS
+# 🟢 UPDATED FILTER CONSTANTS (Refined for comprehensive logic)
 # =========================================================
 
 # --- 1. Explicit Allow List (Overrides Blacklist) ---
-# Add specific league names you want to ALLOW, even if their country is blacklisted (e.g., 'Brazil')
-ALLOWED_LEAGUES = [
-    'Campeonato Brasileiro Série A',
-    'Segunda Division, Apertura',
-    'Copa do Brasil' 
-    # Add any other professional Brazilian leagues you want to keep (use full name from Sofascore)
+# Highest priority. Allows specific leagues/cups/countries (use full name from Sofascore)
+ALLOWED_LEAGUES_WITH_COUNTRY = [
+    'Campeonato Brasileiro Série A',  # Allow Brazil's top tier
+    'Segunda Division, Apertura',     # Allow Mexico's specific second tier
+    'Copa do Brasil',
+    'Bundesliga',                     # Allow Germany's top tier
+    'Premier League',                 # Allow England's top tier
+    # Add any other leagues you explicitly trust and want to keep
 ]
 
-# --- 2. Explicit Country/League Blacklist ---
-# Explicitly exclude countries/leagues known to be high-scoring, high-variance, or amateur.
-EXCLUDED_LEAGUES = [
-    'USA', # General US exclusion
-    'NCAA',
-    'Northeast-10 Conference',
-    'Costa Rican Women Premier Division', 
-    'Liga de Expansion MX Apertura', 
-    'II Lyga', 
-    'Ettan Norra', 
-    'Pervaya Liga',
-    'Promotion d’Honneur',
-    'Liga 4',
-    'Eerste Divisie',
-    'Gozo Football League Second Division',
-    'Eliteserien', 
-    
-    # --- Blacklisted Countries/Leagues ---
+# --- 2. Explicit Country/League Blacklist (High-level exclusion) ---
+# Explicitly exclude general countries/high-variance leagues.
+EXCLUDED_COUNTRIES_OR_LEAGUES = [
+    'USA', 
     'Poland',
-    'Mexico',
+    'Mexico',        # General Mexican exclusion (overridden by 'Segunda Division, Apertura')
     'Wales',
     'Portugal',
     'Denmark',
-    'Germany',
+    'Germany',       # General German exclusion (overridden by 'Bundesliga')
     'Hungary',
     'Sweden',
     'Serbia',
@@ -90,22 +80,18 @@ EXCLUDED_LEAGUES = [
     'Honduras',
     'Chile',
     'Norway',
-    'England', 
+    'England',       # General England exclusion (overridden by 'Premier League')
     'Colombia',
-    'Women', # Exclude all women's leagues
-    'Friendly', 
-    'Reserves',
-    'Regional League',
-    'Serie C',
-    '3. Liga', # German third division
-    'U19','U22', 'U21', 'U23' # Explicit age-group exclusions
+    'Serie C',       # Specific league to exclude
+    '3. Liga',       # Specific league to exclude
 ]
 
-# --- 3. Refined Amateur Keyword Filter ---
+# --- 3. Refined Amateur Keyword Filter (Lower-level exclusion) ---
 # Keywords to catch general amateur/youth tournaments not covered by the explicit blacklist.
 AMATEUR_KEYWORDS = [
-    'amateur', 'youth', 'reserves', 'friendly', 'U23', 'U21', 'U19', 
-    'liga de reservas', 'division b', 'm-league', 'liga pro', 'U17',
+    'amateur', 'youth', 'reserves', 'friendly', 'U23', 'U21', 'U19', 'U17',
+    'liga de reservas', 'division b', 'm-league', 'liga pro',
+    'women', 'regional league', 'college', 'ncaa', 'promotion d’honneur' # Added lower-case for better matching
 ]
 # =========================================================
 
@@ -134,7 +120,7 @@ class FirebaseManager:
         except Exception as e:
             logger.error(f"Failed to initialize Firebase: {e}")
             self.db = None
-            raise
+            # Do not raise here, allow the bot to run without Firebase if needed
     
     # --- EFFICIENT LOOKUP METHODS (OPTIMIZED) ---
     def is_bet_unresolved(self, match_id: int or str) -> bool:
@@ -183,15 +169,9 @@ class FirebaseManager:
             return None
     # --- END EFFICIENT LOOKUP METHODS ---
             
-    # 🔴 REMOVED: Replaced by global LOCAL_TRACKED_MATCHES dictionary
-    # def get_tracked_match(self, match_id): ...
-    # def update_tracked_match(self, match_id, data): ...
-    # def delete_tracked_match(self, match_id): ...
-
     def get_stale_unresolved_bets(self, minutes_to_wait=BET_RESOLUTION_WAIT_MINUTES):
         if not self.db: return {}
         try:
-            # Performs a full scan, but runs only once every FIXTURE_API_INTERVAL (~15 min)
             bets = self.db.collection('unresolved_bets').stream()
             stale_bets = {}
             time_threshold = datetime.utcnow() - timedelta(minutes=minutes_to_wait)
@@ -199,8 +179,6 @@ class FirebaseManager:
             for doc in bets:
                 bet_info = doc.to_dict()
                 
-                # Check for bet types that need final resolution (currently only 32_over is blocked)
-                # Since the regular bet resolves at HT, we only need to check bets that persist past HT.
                 if bet_info.get('bet_type') not in [BET_TYPE_REGULAR]:
                     placed_at_str = bet_info.get('placed_at')
                     if placed_at_str:
@@ -298,13 +276,9 @@ def initialize_bot_services():
     logger.info("Initializing Football Betting Bot services...")
     
     # 1. Initialize Firebase Manager
-    try:
-        firebase_manager = FirebaseManager(FIREBASE_CREDENTIALS_JSON_STRING)
-    except Exception:
-        logger.critical("Bot cannot proceed. Firebase initialization failed.")
-        return False
+    firebase_manager = FirebaseManager(FIREBASE_CREDENTIALS_JSON_STRING)
         
-    if firebase_manager is None or not firebase_manager.db:
+    if firebase_manager is None:
          logger.critical("Bot cannot proceed. Firebase initialization failed.")
          return False
 
@@ -427,20 +401,16 @@ def robust_get_finished_match_details(sofascored_id):
 def place_regular_bet(state, fixture_id, score, match_info):
     """Handles placing the initial 36' bet."""
     
-    # 🟢 OPTIMIZED: Use direct lookup instead of full collection scan
     if firebase_manager.is_bet_unresolved(fixture_id):
         logger.info(f"Regular bet already exists in 'unresolved_bets' for fixture {fixture_id}. Skipping placement and Telegram message.")
-        # Ensure the tracked state is marked as placed to stop re-checking in subsequent runs
         if not state.get('36_bet_placed'):
             state['36_bet_placed'] = True
-            # 🟢 MODIFIED: Update the local store
             LOCAL_TRACKED_MATCHES[fixture_id] = state 
         return
 
     if score in ['1-1', '2-2', '3-3']:
         state['36_bet_placed'] = True
         state['36_score'] = score
-        # 🟢 MODIFIED: Update the local store
         LOCAL_TRACKED_MATCHES[fixture_id] = state 
 
         unresolved_data = {
@@ -465,7 +435,6 @@ def place_regular_bet(state, fixture_id, score, match_info):
         send_telegram(message)
     else:
         state['36_bet_placed'] = True
-        # 🟢 MODIFIED: Update the local store
         LOCAL_TRACKED_MATCHES[fixture_id] = state 
 
 
@@ -473,7 +442,6 @@ def check_ht_result(state, fixture_id, score, match_info):
     """Checks the result of all placed bets at halftime, skipping 32' over bets."""
     
     current_score = score
-    # 🟢 OPTIMIZED: Use targeted getter function
     unresolved_bet_data = firebase_manager.get_unresolved_bet_data(fixture_id) 
 
     if unresolved_bet_data:
@@ -481,7 +449,6 @@ def check_ht_result(state, fixture_id, score, match_info):
         outcome = None
         message = ""
 
-        # 🟢 Use corrected league/country info from the 'unresolved_bet_data' 
         country_name = unresolved_bet_data.get('country', 'N/A') 
         league_name = unresolved_bet_data.get('league', 'N/A')
         
@@ -510,7 +477,6 @@ def check_ht_result(state, fixture_id, score, match_info):
             firebase_manager.move_to_resolved(fixture_id, unresolved_bet_data, outcome)
             send_telegram(message)
     
-    # 🟢 MODIFIED: Clean up the local tracked match store
     if not firebase_manager.is_bet_unresolved(fixture_id):
         if fixture_id in LOCAL_TRACKED_MATCHES:
             del LOCAL_TRACKED_MATCHES[fixture_id]
@@ -519,59 +485,61 @@ def check_ht_result(state, fixture_id, score, match_info):
 
 def process_live_match(match):
     """
-    Processes a single live match using the Sofascore object structure, with new filtering.
+    Processes a single live match using the Sofascore object structure, with new,
+    comprehensive filter logic based on Allow > Blacklist > Keyword.
     """
-    fixture_id = str(match.id) # Ensure ID is string for dictionary key
+    fixture_id = str(match.id) 
     match_name = f"{match.home_team.name} vs {match.away_team.name}"
     
     tournament = match.tournament
     league_name = tournament.name if hasattr(match, 'tournament') else ''
     category_name = tournament.category.name if hasattr(tournament, 'category') and tournament.category else ''
     
-    # Concatenate names for general filtering checks
+    # Concatenate names for filtering checks and convert to lowercase once
     full_filter_text = (
         f"{league_name} "
         f"{category_name}"
     ).lower()
 
     # =========================================================
-    # 🟢 FILTER 1: CONDITIONAL BLACKLIST OVERRIDE (For Brazil, etc.)
+    # 🟢 COMPREHENSIVE FILTER HIERARCHY START
     # =========================================================
-    
-    # Check if the country is generally blacklisted (e.g., 'Brazil')
-    country_is_blacklisted = any(keyword.lower() in category_name.lower() for keyword in EXCLUDED_LEAGUES)
-    is_allowed = False
-    
-    # Check if this blacklisted country/match is on the allow list
-    if country_is_blacklisted and any(keyword.lower() in league_name.lower() for keyword in ALLOWED_LEAGUES):
-        # We found a blacklisted country, but the specific league is ALLOWED.
-        is_allowed = True
-        logger.info(f"🟢 ALLOWED: Match {match_name} ({category_name} | {league_name}) is on the explicit ALLOWED list.")
 
-    # =========================================================
-    # 🟢 FILTER 2: EXPLICIT COUNTRY/LEAGUE BLACKLIST LOGIC (Only runs if not allowed)
-    # =========================================================
-    
-    # If the match is NOT explicitly allowed, check for general blacklisting criteria.
-    if not is_allowed:
-        if country_is_blacklisted or \
-           any(keyword.lower() in league_name.lower() for keyword in EXCLUDED_LEAGUES):
-            
+    # 1. Check Explicit Allow List (Highest Priority)
+    # If the league name is on the explicit allow list, ACCEPT it immediately.
+    is_explicitly_allowed = any(
+        keyword.lower() in league_name.lower() 
+        for keyword in ALLOWED_LEAGUES_WITH_COUNTRY
+    )
+
+    if not is_explicitly_allowed:
+        # If NOT explicitly allowed, then check against the blacklists.
+
+        # 2. Check Explicit Country/League Blacklist (Second Priority)
+        is_explicitly_excluded = any(
+            keyword.lower() in full_filter_text 
+            for keyword in EXCLUDED_COUNTRIES_OR_LEAGUES
+        )
+        
+        if is_explicitly_excluded:
             logger.info(f"Skipping match {match_name}: Explicitly excluded league/country found ({category_name} | {league_name}).")
             return # Skip this match
-    # =========================================================
-
-
-    # =========================================================
-    # 🟢 FILTER 3: AMATEUR TOURNAMENT FILTER LOGIC (KEYWORD ONLY)
-    # =========================================================
-    # Check for general amateur keywords (Runs last)
-    if any(keyword in full_filter_text for keyword in AMATEUR_KEYWORDS):
+            
+        # 3. Check Amateur Keyword Blacklist (Lowest Priority)
+        # Check for general amateur/youth keywords.
+        is_amateur_keyword_excluded = any(
+            keyword in full_filter_text 
+            for keyword in AMATEUR_KEYWORDS
+        )
         
-        cleaned_text = full_filter_text.replace('\n', ' ')
-        logger.info(f"Skipping amateur/youth league based on keyword found in: {cleaned_text}")
-        
-        return # Skip this match
+        if is_amateur_keyword_excluded:
+            cleaned_text = full_filter_text.replace('\n', ' ')
+            logger.info(f"Skipping amateur/youth league based on keyword found in: {cleaned_text}")
+            return # Skip this match
+            
+    # If it passed all filters (or was explicitly allowed), proceed.
+    # =========================================================
+    # 🟢 COMPREHENSIVE FILTER HIERARCHY END
     # =========================================================
 
     minute = match.total_elapsed_minutes 
@@ -591,12 +559,10 @@ def process_live_match(match):
     if status.upper() not in STATUS_LIVE and status.upper() != STATUS_HALFTIME: return
     if minute is None and status.upper() not in [STATUS_HALFTIME]: return
     
-    # 🟢 ENHANCEMENT: Use the global in-memory store instead of Firestore for tracked matches
     state = LOCAL_TRACKED_MATCHES.get(fixture_id) or {
         '36_bet_placed': False,
         '36_score': None,
     }
-    # 🟢 Store or update the initial/current state in the local store
     LOCAL_TRACKED_MATCHES[fixture_id] = state
 
     match_info = {
@@ -609,12 +575,10 @@ def process_live_match(match):
     if status.upper() == '1H' and minute in MINUTES_REGULAR_BET and not state.get('36_bet_placed'):
         place_regular_bet(state, fixture_id, score, match_info)
         
-    elif status.upper() == STATUS_HALFTIME and firebase_manager.is_bet_unresolved(fixture_id): # OPTIMIZED
-        # Only check HT result if an unresolved bet exists (to avoid unnecessary HT checks)
+    elif status.upper() == STATUS_HALFTIME and firebase_manager.is_bet_unresolved(fixture_id):
         check_ht_result(state, fixture_id, score, match_info)
         
-    # 🟢 MODIFIED: Clean up the local tracked match if it's finished and all bets are resolved/cleared
-    if status in STATUS_FINISHED and not firebase_manager.is_bet_unresolved(fixture_id): # OPTIMIZED
+    if status in STATUS_FINISHED and not firebase_manager.is_bet_unresolved(fixture_id):
         if fixture_id in LOCAL_TRACKED_MATCHES:
             del LOCAL_TRACKED_MATCHES[fixture_id]
             logger.info(f"Cleaned up local tracking for finished fixture {fixture_id}.")
@@ -646,10 +610,8 @@ def check_and_resolve_stale_bets():
     successful_api_call = False
     
     for match_id, bet_info in stale_bets.items():
-        # Get the stored Sofascore ID for lookup
         sofascored_id = bet_info.get('sofascored_id', match_id) 
 
-        # Use the robust fetcher with the Sofascore ID
         match_data = robust_get_finished_match_details(sofascored_id)
         
         if not match_data:
@@ -658,29 +620,42 @@ def check_and_resolve_stale_bets():
         
         successful_api_call = True 
 
-        # Check the status from the reliably fetched match_data
         status_description = match_data.status.description.upper()
         
         if 'FINISHED' in status_description or 'ENDED' in status_description:
-            # Use the final score from the reliably fetched match_data
-            final_score = f"{match_data.home_score.current or 0}-{match_data.away_score.current or 0}"
-            match_name = bet_info.get('match_name', f"Match {match_id}")
-            bet_type = bet_info.get('bet_type', 'unknown')
+            # final_score = f"{match_data.home_score.current or 0}-{match_data.away_score.current or 0}"
+            # match_name = bet_info.get('match_name', f"Match {match_id}")
+            # bet_type = bet_info.get('bet_type', 'unknown')
             
-            # 🟢 Retrieve the corrected info from Firebase
-            country_name = bet_info.get('country', 'N/A') 
-            league_name = bet_info.get('league', 'N/A') 
+            # country_name = bet_info.get('country', 'N/A') 
+            # league_name = bet_info.get('league', 'N/A') 
             
-            outcome = None
-            message = ""
+            # outcome = None # Placeholder for potential FT resolution logic
 
-            # Currently, only 'regular' bets resolve at HT. If you unblock other bet types
-            # that resolve at FT, their resolution logic would go here.
+            # if outcome and outcome != 'error':
+            #     if send_telegram(message):
+            #         firebase_manager.move_to_resolved(match_id, bet_info, outcome)
+            #         if match_id in LOCAL_TRACKED_MATCHES:
+            #             del LOCAL_TRACKED_MATCHES[match_id] 
+            #         time.sleep(1)
             
-            if outcome and outcome != 'error':
-                if send_telegram(message):
-                    firebase_manager.move_to_resolved(match_id, bet_info, outcome)
-                    # 🟢 MODIFIED: Clean up the local tracked match if it still exists
+            # Since the only bet type ('regular') resolves at HT, we simply log and clean up
+            logger.info(f"Stale bet {match_id} (Type: {bet_info.get('bet_type')}) is finished. Assuming resolved/cleaned at HT.")
+            # If the bet type is 'regular' and it's here, it was likely missed at HT. 
+            # We should only keep resolving logic here for bet types that *wait* for FT.
+
+            # Safely move it to resolved if it somehow persisted without resolution
+            # For simplicity, if a 'regular' bet hits this resolution block, we treat it as a loss
+            # and clean it up to prevent permanent clogging.
+            if bet_info.get('bet_type') == BET_TYPE_REGULAR:
+                 message = (
+                    f"⚠️ **STALE BET RESOLUTION: {bet_info.get('match_name', f'Match {match_id}')}**\n"
+                    f"Bet Type: 36' Regular Bet (Missed HT resolution)\n"
+                    f"Final Score: {f'{match_data.home_score.current}-{match_data.away_score.current}'}\n"
+                    f"Status: Resolved as **LOST** (Cleanup)"
+                 )
+                 if firebase_manager.move_to_resolved(match_id, bet_info, 'lost_stale_cleanup'):
+                    send_telegram(message)
                     if match_id in LOCAL_TRACKED_MATCHES:
                         del LOCAL_TRACKED_MATCHES[match_id] 
                     time.sleep(1)
@@ -695,7 +670,7 @@ def run_bot_cycle():
     """Run one complete cycle of the bot"""
     logger.info("Starting bot cycle...")
     
-    if not SOFASCORE_CLIENT or not firebase_manager or not firebase_manager.db:
+    if not SOFASCORE_CLIENT or not firebase_manager:
         logger.error("Services are not initialized. Skipping cycle.")
         return
         
