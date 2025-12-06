@@ -55,7 +55,6 @@ ALLOWED_LEAGUES_WITH_COUNTRY = [
     'Campeonato Brasileiro Série A',  # Allow Brazil's top tier
     'Segunda Division, Apertura',     # Allow Mexico's specific second tier
     'Copa do Brasil',
-    'Bundesliga',                     # Allow Germany's top tier
     'Premier League',                 # Allow England's top tier
     # Add any other leagues you explicitly trust and want to keep
 ]
@@ -81,6 +80,12 @@ EXCLUDED_COUNTRIES_OR_LEAGUES = [
     'Chile',
     'Norway',
     'England',       # General England exclusion (overridden by 'Premier League')
+    'England Amateur',
+    'Iceland',
+    'Seychelles',
+    'Hong Kong 2nd Division',
+    'Bosnia & Herzegovina',
+    'Italy Series D',
     'Colombia',
     'Serie C',       # Specific league to exclude
     '3. Liga',       # Specific league to exclude
