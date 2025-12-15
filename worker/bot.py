@@ -68,6 +68,7 @@ EXCLUDED_COUNTRIES_OR_LEAGUES = [
     'Wales',
     'Portugal',
     'Denmark',
+    'Malta',
     'Germany',       # General German exclusion (overridden by 'Bundesliga')
     'Hungary',
     'Sweden',
@@ -87,6 +88,9 @@ EXCLUDED_COUNTRIES_OR_LEAGUES = [
     'Bosnia & Herzegovina',
     'Italy Series D',
     'Colombia',
+    'Jordan Reserve League',
+    'División Profesional',
+    'Mumbai Premier League',
     'Serie C',       # Specific league to exclude
     '3. Liga',       # Specific league to exclude
 ]
