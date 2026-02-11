@@ -215,7 +215,7 @@ def process_live_match(match):
         check_ht_result(state, fixture_id, score, match_info)
 
 
-def run_cycle():
+def run_bot_cycle():
     matches = SOFASCORE_CLIENT.get_events(live=True)
     for match in matches:
         process_live_match(match)
