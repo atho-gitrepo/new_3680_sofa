@@ -45,7 +45,7 @@ EXCLUDED_LEAGUES = ['USA', 'Poland', 'Mexico', 'Wales', 'Portugal', 'Denmark', '
 AMATEUR_KEYWORDS = ['amateur', 'youth', 'reserves', 'friendly', 'u23', 'u21', 'u19', 'u17', 'liga pro', 'women', 'college', 'ncaa']
 
 # =========================================================
-# 🟢 FIREBASE MANAGER (WITH DETAILED LOGGING)
+# 🟢 FIREBASE MANAGER (FIXED)
 # =========================================================
 
 class FirebaseManager:
@@ -66,7 +66,7 @@ class FirebaseManager:
             logger.error(f"❌ Firebase Init Failed: {e}", exc_info=True)
 
     def is_state_locked(self) -> bool:
-        """STATE-LOCK: Check if an unresolved bet exists."""
+        """STATE-LOCK: Check if any unresolved bet exists globally."""
         if not self.db: return False
         try:
             docs = self.db.collection('unresolved_bets').limit(1).get()
@@ -78,6 +78,16 @@ class FirebaseManager:
             return locked
         except Exception as e:
             logger.error(f"Error checking state lock: {e}")
+            return False
+
+    def is_bet_unresolved(self, match_id: str) -> bool:
+        """Checks if a SPECIFIC match ID is currently active in Firebase."""
+        if not self.db: return False
+        try:
+            doc = self.db.collection('unresolved_bets').document(str(match_id)).get()
+            return doc.exists
+        except Exception as e:
+            logger.error(f"Error checking if bet {match_id} is unresolved: {e}")
             return False
 
     def get_last_resolved_bet(self):
@@ -96,6 +106,16 @@ class FirebaseManager:
             return None
         except Exception as e:
             logger.error(f"Error fetching history: {e}")
+            return None
+
+    def get_unresolved_bet_data(self, match_id: str):
+        """Retrieves data for a specific active bet."""
+        if not self.db: return None
+        try:
+            doc = self.db.collection('unresolved_bets').document(str(match_id)).get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            logger.error(f"Error getting data for bet {match_id}: {e}")
             return None
 
     def add_unresolved_bet(self, match_id, data):
@@ -125,11 +145,10 @@ class FirebaseManager:
             return False
 
 # =========================================================
-# 🟢 STAKING & LOGIC (WITH DETAILED LOGGING)
+# 🟢 STAKING & BOT LOGIC
 # =========================================================
 
 def calculate_next_stake():
-    """Martingale calculation with logging."""
     logger.info("Calculating next stake amount based on history...")
     last_bet = firebase_manager.get_last_resolved_bet()
     
@@ -154,17 +173,14 @@ def calculate_next_stake():
         return ORIGINAL_STAKE, 1
 
 def place_regular_bet(state, fixture_id, score, match_info):
-    """Log the alert flow and state lock."""
     logger.info(f"Evaluating alert for: {match_info['match_name']} (Score: {score})")
     
-    # 1. Check State-Lock
     if firebase_manager.is_state_locked():
         if not state.get('lock_logged'):
-            logger.warning(f"🚫 ALERT SUPPRESSED: System is locked by an unresolved bet. Skipping {match_info['match_name']}.")
+            logger.warning(f"🚫 ALERT SUPPRESSED: System is locked. Skipping {match_info['match_name']}.")
             state['lock_logged'] = True
         return
 
-    # 2. Check Score Criteria
     if score in ['1-1', '2-2', '3-3']:
         logger.info(f"✅ Criteria met for {match_info['match_name']}. Processing stake...")
         stake, sequence = calculate_next_stake()
@@ -194,21 +210,20 @@ def place_regular_bet(state, fixture_id, score, match_info):
             logger.info(f"📡 Telegram alert sent for {match_info['match_name']}")
         state['36_bet_placed'] = True
     else:
-        logger.info(f"Match {match_info['match_name']} score {score} does not match draw criteria. Skipping.")
+        logger.info(f"Match {match_info['match_name']} score {score} does not match criteria. Skipping.")
         state['36_bet_placed'] = True
 
 def check_ht_result(state, fixture_id, score, match_info):
-    """Log resolution details."""
     logger.info(f"Match {match_info['match_name']} reached Halftime. Checking result...")
     unresolved_data = firebase_manager.get_unresolved_bet_data(fixture_id)
     if not unresolved_data: 
-        logger.warning(f"No unresolved bet data found in Firebase for {fixture_id} at HT.")
+        logger.warning(f"No active bet data for {fixture_id} found in Firebase at HT.")
         return
 
     target_score = unresolved_data.get('36_score')
     outcome = 'win' if score == target_score else 'loss'
     
-    logger.info(f"Resolution for {match_info['match_name']}: HT Score {score} vs Target {target_score} -> Result: {outcome.upper()}")
+    logger.info(f"Resolution for {match_info['match_name']}: HT Score {score} vs Target {target_score} -> {outcome.upper()}")
     
     emoji = "✅ WIN" if outcome == 'win' else "❌ LOSS"
     msg = (
@@ -221,43 +236,31 @@ def check_ht_result(state, fixture_id, score, match_info):
         send_telegram(msg)
         if fixture_id in LOCAL_TRACKED_MATCHES:
             del LOCAL_TRACKED_MATCHES[fixture_id]
-            logger.info(f"Local state cleared for {fixture_id}.")
 
 def process_live_match(match):
-    """Detailed filtering logs."""
     fixture_id = str(match.id)
     league_name = match.tournament.name
     category_name = match.tournament.category.name
     full_text = f"{league_name} {category_name}".lower()
 
-    # FILTERING LOGS
     is_allowed = any(k.lower() in league_name.lower() for k in ALLOWED_LEAGUES)
     if not is_allowed:
-        if any(k.lower() in full_text for k in EXCLUDED_LEAGUES):
-            logger.debug(f"Filtered (Blacklist): {league_name} ({category_name})")
-            return
-        if any(k.lower() in full_text for k in AMATEUR_KEYWORDS):
-            logger.debug(f"Filtered (Amateur): {league_name} ({category_name})")
-            return
+        if any(k.lower() in full_text for k in EXCLUDED_LEAGUES): return
+        if any(k.lower() in full_text for k in AMATEUR_KEYWORDS): return
 
     minute = match.total_elapsed_minutes 
     status_desc = match.status.description.upper()
     
-    # Map status
     if '1ST' in status_desc: status = '1H'
     elif 'HALFTIME' in status_desc: status = STATUS_HALFTIME
     else: status = 'OTHER'
 
     score = f"{match.home_score.current}-{match.away_score.current}"
-
     state = LOCAL_TRACKED_MATCHES.get(fixture_id) or {'36_bet_placed': False, 'lock_logged': False}
     LOCAL_TRACKED_MATCHES[fixture_id] = state
 
-    match_info = {
-        'match_name': f"{match.home_team.name} vs {match.away_team.name}", 
-        'league_name': league_name, 
-        'country': category_name
-    }
+    match_info = {'match_name': f"{match.home_team.name} vs {match.away_team.name}", 
+                  'league_name': league_name, 'country': category_name}
 
     if status == '1H' and minute in MINUTES_REGULAR_BET and not state['36_bet_placed']:
         place_regular_bet(state, fixture_id, score, match_info)
@@ -284,15 +287,13 @@ def initialize_bot_services():
     try:
         SOFASCORE_CLIENT = SofascoreClient()
         SOFASCORE_CLIENT.initialize()
-        logger.info("Sofascore Client Initialized.")
         return True
     except Exception as e:
-        logger.critical(f"Sofascore Init Failed: {e}")
+        logger.critical(f"Init Failed: {e}")
         return False
 
 def shutdown_bot():
     if SOFASCORE_CLIENT:
-        logger.info("Closing Sofascore Client...")
         SOFASCORE_CLIENT.close()
 
 def run_bot_cycle():
