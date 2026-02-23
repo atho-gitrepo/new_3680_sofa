@@ -154,8 +154,16 @@ def place_regular_bet(state, fixture_id, score, match_info):
             'match_sequence': sequence
         }
         firebase_manager.add_unresolved_bet(fixture_id, unresolved_data)
-        label = "RECOVERY" if sequence > 1 else "INITIAL"
-        msg = f"🎯 **{label} | Match {sequence}**\n⏱️ **36' - {match_info['match_name']}**\n🔢 Score: **{score}**\n💰 **Stake: ${stake:.2f}**"
+        
+        label = "RECOVERY CHASE" if sequence > 1 else "INITIAL BET"
+        msg = (
+            f"🎯 **{label} | Match {sequence}**\n"
+            f"⏱️ **36' Alert** | {match_info['match_name']}\n"
+            f"🌍 {match_info['country']} | 🏆 {match_info['league_name']}\n"
+            f"🔢 Current Score: **{score}**\n\n"
+            f"💰 **Stake: ${stake:.2f}**\n"
+            f"⚠️ *Ignoring other matches until resolution.*"
+        )
         send_telegram(msg)
         state['36_bet_placed'] = True
     else:
@@ -164,11 +172,19 @@ def place_regular_bet(state, fixture_id, score, match_info):
 def check_ht_result(state, fixture_id, score, match_info):
     unresolved_data = firebase_manager.get_unresolved_bet_data(fixture_id)
     if not unresolved_data: return
+    
     target = unresolved_data.get('36_score')
     outcome = 'win' if score == target else 'loss'
     emoji = "✅ WIN" if outcome == 'win' else "❌ LOSS"
+    
     if firebase_manager.move_to_resolved(fixture_id, unresolved_data, outcome):
-        send_telegram(f"{emoji} **HT: {match_info['match_name']}**\n🔢 HT Score: **{score}**\n🔓 System Unlocked.")
+        msg = (
+            f"{emoji} **HT Result: {match_info['match_name']}**\n"
+            f"🌍 {match_info['country']} | 🏆 {match_info['league_name']}\n"
+            f"🔢 HT Score: **{score}** (Target: {target})\n"
+            f"🔓 **System Unlocked.**"
+        )
+        send_telegram(msg)
         if fixture_id in LOCAL_TRACKED_MATCHES: del LOCAL_TRACKED_MATCHES[fixture_id]
 
 def process_live_match(match):
