@@ -11,7 +11,7 @@ logger.setLevel(logging.INFO)
 RUNNING = True
 CHECK_INTERVAL = SLEEP_TIME
 LAST_HEARTBEAT = 0
-HEARTBEAT_INTERVAL = 14400
+HEARTBEAT_INTERVAL = 1800
 
 def signal_handler(signum, frame):
     global RUNNING
