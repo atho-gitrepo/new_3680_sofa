@@ -26,7 +26,7 @@ def main():
         print("❌ Init failed.")
         sys.exit(1)
     
-    send_telegram("🚀 **Phase 1 Bot Online**\nStabilization & Recovery Active.")
+    send_telegram("🚀 **Live Score Bot Start**\nBotActive and Healthy.")
 
     while RUNNING:
         try:
@@ -51,7 +51,7 @@ def main():
                 initialize_bot_services()
 
             # 3. Heartbeat
-            if time.time() - LAST_HEARTBEAT > 1800:
+            if time.time() - LAST_HEARTBEAT > 14400:
                 send_telegram("💓 **Heartbeat**: Scanning active.")
                 LAST_HEARTBEAT = time.time()
 
