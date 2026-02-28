@@ -118,7 +118,7 @@ def process_match(match):
                 stake, seq = calculate_stake()
                 data = {**match_info, '36_score': score, 'stake': stake, 'match_sequence': seq, 'bet_type': 'regular'}
                 firebase_manager.add_unresolved_bet(fid, data)
-                send_telegram(f"🎯 **BET PLACED (Match {seq})**\n⏱ 36' | {match_info['name']}\n🌍 {country} | 🏆 {league}\n🔢 Score: {score}\n💰 Stake: ${stake:.2f}")
+                send_telegram(f"🎯 **BET PLACED (Match {seq})**\n⏱ 36' | {match_info['match_name']}\n🌍 {country} | 🏆 {league}\n🔢 Score: {score}\n💰 Stake: ${stake:.2f}")
         state['bet_placed'] = True
 
     # 2. CHECK HT RESULT
@@ -128,7 +128,7 @@ def process_match(match):
             outcome = 'win' if score == unresolved['36_score'] else 'loss'
             if firebase_manager.move_to_resolved(fid, unresolved, outcome):
                 emo = "✅ WIN" if outcome == 'win' else "❌ LOSS"
-                send_telegram(f"{emo} **HT Result**\n⚽️ {match_info['name']}\n🔢 Score: {score}\n🔓 System Unlocked.")
+                send_telegram(f"{emo} **HT Result**\n⚽️ {match_info['match_name']}\n🔢 Score: {score}\n🔓 System Unlocked.")
                 if fid in LOCAL_TRACKED_MATCHES: del LOCAL_TRACKED_MATCHES[fid]
 
 def initialize_bot_services():
