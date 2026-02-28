@@ -107,7 +107,7 @@ def process_match(match):
     status = match.status.description.upper()
     score = f"{match.home_score.current}-{match.away_score.current}"
     
-    match_info = {'name': f"{match.home_team.name} vs {match.away_team.name}", 'league': league, 'country': country}
+    match_info = {'match_name': f"{match.home_team.name} vs {match.away_team.name}", 'league': league, 'country': country}
     state = LOCAL_TRACKED_MATCHES.get(fid, {'bet_placed': False})
     LOCAL_TRACKED_MATCHES[fid] = state
 
@@ -116,7 +116,7 @@ def process_match(match):
         if not firebase_manager.is_state_locked():
             if score in ['1-1', '2-2', '3-3']:
                 stake, seq = calculate_stake()
-                data = {**match_info, '36_score': score, 'stake': stake, 'match_sequence': seq}
+                data = {**match_info, '36_score': score, 'stake': stake, 'match_sequence': seq, 'bet_type': 'regular'}
                 firebase_manager.add_unresolved_bet(fid, data)
                 send_telegram(f"🎯 **BET PLACED (Match {seq})**\n⏱ 36' | {match_info['name']}\n🌍 {country} | 🏆 {league}\n🔢 Score: {score}\n💰 Stake: ${stake:.2f}")
         state['bet_placed'] = True
