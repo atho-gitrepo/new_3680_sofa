@@ -1,0 +1,16 @@
+flask
+gunicorn
+requests
+python-dotenv
+google-cloud-firestore
+firebase-admin
+esd
+playwright
+playwright-stealth
+firebase-admin
+httpx
+lxml
+websocket-client>=1.6.0
+prometheus_client
+# This assumes 'esd.sofascore' is installed as a local package or symlinked
+# For simple local use/Railway, you just need the dependencies:

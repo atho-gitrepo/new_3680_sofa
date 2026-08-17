@@ -1,0 +1,27 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  lsb-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lsb-bot
+    restart: unless-stopped
+    ports:
+      - "8000:8000"  # Prometheus metrics
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=UTC
+    volumes:
+      # Mount for live code reload during development
+      - ./worker:/app/worker
+      - ./bot_activity.log:/app/bot_activity.log
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command: ["python", "-m", "worker.main"]
