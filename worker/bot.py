@@ -33,10 +33,6 @@ FIREBASE_CREDENTIALS = os.getenv("FIREBASE_CREDENTIALS_JSON", "")
 # STAKING ENGINE CONFIGURATION
 # ============================================================
 # These are now managed by the staking engine
-# ORIGINAL_STAKE and MAX_CHASE_LEVEL are no longer used for Martingale
-# The staking engine uses the Dynamic Percentage sequence: 10, 15, 25, 40, 60, 90
-
-# Keep these for backward compatibility, but they will be overridden by the staking engine
 ORIGINAL_STAKE = 10.0
 MAX_CHASE_LEVEL = 3
 
@@ -71,7 +67,7 @@ COUNTRY_FLAGS = {
     "egypt": "🇪🇬", "nigeria": "🇳🇬", "south africa": "🇿🇦", "chile": "🇨🇱",
     "colombia": "🇨🇴", "peru": "🇵🇪", "uruguay": "🇺🇾", "paraguay": "🇵🇾",
     "ecuador": "🇪🇨", "venezuela": "🇻🇪", "bolivia": "🇧🇴", "costarica": "🇨🇷",
-    "finland": "🇫🇮", "world": "🌍"
+    "finland": "🇫🇮", "world": "🌍", "turkiye": "🇹🇷"
 }
 
 # =========================
@@ -146,7 +142,20 @@ def get_current_stake() -> float:
     """
     if not _staking_enabled or not _staking_engine:
         return ORIGINAL_STAKE
-    return _staking_engine.get_current_stake()
+    
+    stake = _staking_engine.get_current_stake()
+    # If paused (stake = 0), fall back to ORIGINAL_STAKE
+    if stake == 0:
+        logger.info("⏸️ Staking engine paused. Using original stake.")
+        return ORIGINAL_STAKE
+    
+    return float(stake)
+
+def get_current_step() -> int:
+    """Get the current step from the staking engine."""
+    if _staking_engine:
+        return _staking_engine.current_step
+    return 0
 
 def record_bet_result(is_win: bool, match_info: Optional[Dict] = None) -> Optional[Dict]:
     """
@@ -264,27 +273,26 @@ def send_telegram(msg: str):
         logger.error(f"❌ Network error sending Telegram webhook event: {e}")
 
 # ============================================================
-# REPLACED: calculate_stake() - Now uses Dynamic Percentage
+# FIXED: calculate_stake() - Now correctly uses Staking Engine
 # ============================================================
 
 def calculate_stake() -> tuple[float, int]:
     """
     Calculate the stake using the Dynamic Percentage staking engine.
     Returns (stake, sequence_number) for compatibility with existing code.
-    The sequence number is now derived from the staking engine step.
     """
     global _staking_engine, _staking_enabled
 
     # If staking engine is enabled, use it
     if _staking_enabled and _staking_engine:
         stake = _staking_engine.get_current_stake()
-
+        
         # If paused (stake = 0), fall back to ORIGINAL_STAKE
         if stake == 0:
             logger.info("⏸️ Staking engine paused. Using original stake.")
             return ORIGINAL_STAKE, 1
-
-        # Get the current step for sequence tracking
+        
+        # Get the current step for sequence tracking (step + 1 for display)
         step = _staking_engine.current_step + 1
         return float(stake), step
 
@@ -320,8 +328,6 @@ def extract_hybrid_geography(match) -> tuple[str, str, str]:
     Resolves league and country data structures across both
     Sofascore object types and LiveScore payload mappings.
     Returns: (league_name, country_name, country_slug)
-
-    Uses actual data from the API responses.
     """
     # 1. Handle object-oriented payload formats (Sofascore)
     if hasattr(match, 'tournament'):
@@ -332,24 +338,21 @@ def extract_hybrid_geography(match) -> tuple[str, str, str]:
 
     # 2. Handle structural dictionary payload formats (LiveScore)
     if isinstance(match, dict):
-        # Get tournament/league name from actual data
         tournament_name = "Unknown League"
 
-        # Try Stg (Stage) data first - this is the most reliable for Livescore
+        # Try Stg (Stage) data first
         if "Stg" in match and isinstance(match["Stg"], dict):
             stage = match["Stg"]
             tournament_name = (
-                stage.get("Snm") or      # Stage Name - THIS IS THE TOURNAMENT NAME!
-                stage.get("CompN") or    # Competition Name (World Cup, etc.)
+                stage.get("Snm") or
+                stage.get("CompN") or
                 stage.get("Nm") or
                 "Unknown League"
             )
 
-            # If still unknown, check if there's a tournament name in the event itself
             if tournament_name == "Unknown League":
                 tournament_name = match.get("Snm") or match.get("CompN") or "Unknown League"
 
-        # If no Stg data, try direct fields
         if tournament_name == "Unknown League":
             tournament_name = (
                 match.get("Snm") or
@@ -359,11 +362,9 @@ def extract_hybrid_geography(match) -> tuple[str, str, str]:
                 "Unknown League"
             )
 
-        # Get country from actual data
         country_name = "World"
         country_slug = "world"
 
-        # Try Stg data first
         if "Stg" in match and isinstance(match["Stg"], dict):
             stage = match["Stg"]
             country_name = (
@@ -374,7 +375,6 @@ def extract_hybrid_geography(match) -> tuple[str, str, str]:
             )
             country_slug = country_name.lower()
 
-        # If no country from Stg, try direct fields
         if country_name == "World":
             country_name = (
                 match.get("Cnm") or
@@ -400,7 +400,6 @@ def process_match(match):
     else:
         match_name = match.get('match_name') or f"{match.get('home_name', 'Home')} vs {match.get('away_name', 'Away')}"
 
-    # Extract dynamic structural metadata using the hybrid tracker
     league, country, country_slug = extract_hybrid_geography(match)
     full_info = f"{league} {country}"
 
@@ -408,7 +407,6 @@ def process_match(match):
         logger.debug(f"⏭️ Skipping amateur match: {match_name} ({full_info})")
         return
 
-    # Extract score matrices and status descriptions safely
     if hasattr(match, 'status'):
         status = match.status.description.upper()
         score = f"{match.home_score.current}-{match.away_score.current}"
@@ -455,15 +453,18 @@ def process_match(match):
         else:
             if score in ['1-1', '2-2', '2-0', '0-2']:
                 logger.warning(f"⚡ QUALIFIED: Firing placement routine for {match_name} at score {score}")
+                
+                # Get stake and step from staking engine
                 stake, seq = calculate_stake()
-
-                # Fetch matching country emoji flag using the normalized low-case string slug
+                
+                # Get current step for display
+                current_step = _staking_engine.current_step if _staking_engine else 0
+                
                 flag_emoji = COUNTRY_FLAGS.get(country_slug.lower(), COUNTRY_FLAGS.get(country.lower(), "🌍"))
 
-                # Get staking engine step display for the message
                 step_display = ""
                 if _staking_engine:
-                    step_display = f" | Step {_staking_engine.current_step + 1}/{len(STAKE_SEQUENCE)}"
+                    step_display = f" | Step {current_step + 1}/{len(STAKE_SEQUENCE)}"
 
                 data = {
                     'match_name': match_name,
@@ -474,7 +475,7 @@ def process_match(match):
                     'stake': stake,
                     'match_sequence': seq,
                     'bet_type': 'regular',
-                    'staking_step': _staking_engine.current_step + 1 if _staking_engine else 0,
+                    'staking_step': current_step + 1 if _staking_engine else 0,
                     'staking_sequence': STAKE_SEQUENCE if _staking_engine else [],
                 }
                 firebase_manager.add_unresolved_bet(fid, data)
@@ -506,7 +507,7 @@ def process_match(match):
 
             stake = unresolved.get('stake', 0)
 
-            # --- NEW: Record result in staking engine ---
+            # --- Record result in staking engine ---
             if _staking_engine:
                 is_win = (outcome == 'win')
                 match_info = {
@@ -518,30 +519,61 @@ def process_match(match):
                     'stake': stake,
                 }
                 result = _staking_engine.record_result(is_win, match_info)
-
+                
                 # Get updated staking engine status for the message
-                step_display = _staking_engine.get_current_step_display()
+                step_display = f"Step {_staking_engine.current_step + 1}/{len(STAKE_SEQUENCE)}"
+                
+                # Get the NEXT stake for display
+                next_stake = _staking_engine.get_current_stake()
+                if next_stake == 0:
+                    next_stake_display = "⏸️ PAUSED"
+                else:
+                    next_stake_display = f"Next: ${next_stake:.2f}"
+                
                 bankroll_display = f" | 💰 Bankroll: ${_staking_engine.current_bankroll:.2f}"
                 profit_display = f" | 📈 Profit: ${_staking_engine.total_profit:.2f}"
             else:
-                step_display = ""
+                step_display = f"Step {seq}/{len(STAKE_SEQUENCE)}" if seq else ""
+                next_stake_display = ""
                 bankroll_display = ""
                 profit_display = ""
 
             firebase_manager.move_to_resolved(fid, unresolved, outcome)
 
-            send_telegram(
+            # Build the result message with proper stake display
+            result_msg = (
                 f"{'✅ WIN' if outcome == 'win' else '❌ LOSS'} **HT Settlement**\n"
                 f"⏱ 45' | {match_name}\n"
                 f"{flag_emoji} {db_country} | 🏆 {db_league}\n"
                 f"🔢 Score: {score} (Target: {trigger_score})\n"
-                f"💰 Stake: ${stake:.2f}{step_display}{bankroll_display}{profit_display}"
+                f"💰 Stake: ${stake:.2f}"
             )
+            
+            if step_display:
+                result_msg += f" | {step_display}"
+            
+            if _staking_engine and _staking_engine.is_paused:
+                pause_remaining = int(_staking_engine.pause_until - time.time())
+                if pause_remaining > 0:
+                    minutes = pause_remaining // 60
+                    seconds = pause_remaining % 60
+                    result_msg += f" | ⏸️ PAUSED for {minutes}m {seconds}s"
+            
+            if bankroll_display:
+                result_msg += bankroll_display
+            if profit_display:
+                result_msg += profit_display
+
+            send_telegram(result_msg)
             LOCAL_TRACKED_MATCHES.pop(fid, None)
 
 # =========================
 # DRIVER LAYER INTERFACES
 # =========================
+
+# Initialize global Firebase manager
+firebase_manager = None
+SOFASCORE_CLIENT = None
 
 def initialize_bot_services() -> bool:
     global firebase_manager, SOFASCORE_CLIENT
