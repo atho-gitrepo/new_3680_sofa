@@ -47,8 +47,8 @@ logger = logging.getLogger("BetBot.Supervisor")
 # --- CONSTRAINTS ---
 WATCHDOG_LIMIT = 300
 REBOOT_LIMIT = 86400
-HEARTBEAT_LIMIT = 3600
-STATUS_UPDATE_INTERVAL = 30  # Send staking status every 30 cycles
+HEARTBEAT_LIMIT = 86400
+STATUS_UPDATE_INTERVAL = 86400  # Send staking status every 30 cycles
 METRICS_PORT = int(os.getenv("PORT", 8000))
 
 RUNNING = True
