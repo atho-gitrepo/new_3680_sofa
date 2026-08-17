@@ -61,6 +61,9 @@ CYCLE_COUNT = 0
 # ============================================================
 staking_engine = None
 
+# Constants for staking engine configuration (matches staking_engine internal values)
+MAX_CONSECUTIVE_LOSSES = 3  # This matches the internal value in StakingEngine
+
 # --------------------------------------------------
 # SIGNAL TRAP HANDLERS
 # --------------------------------------------------
@@ -158,7 +161,8 @@ def main():
     logger.info(f"📊 Dynamic Percentage Staking Engine loaded.")
     logger.info(f"📊 Sequence: {STAKE_SEQUENCE}")
     logger.info(f"💰 Initial Bankroll: ${initial_bankroll:.2f}")
-    logger.info(f"⚠️ Pause after {staking_engine.MAX_CONSECUTIVE_LOSSES} consecutive losses.")
+    # FIXED: Use the constant MAX_CONSECUTIVE_LOSSES instead of accessing staking_engine attribute
+    logger.info(f"⚠️ Pause after {MAX_CONSECUTIVE_LOSSES} consecutive losses.")
 
     # Attach kernel operational interrupt triggers
     signal.signal(signal.SIGINT, handle_shutdown_signal)
@@ -183,7 +187,8 @@ def main():
         "📊 **Dynamic Percentage Staking Engine Active**\n"
         f"🔄 Sequence: {' → '.join('$'+str(s) for s in STAKE_SEQUENCE)}\n"
         f"💰 Initial Bankroll: ${initial_bankroll:.2f}\n"
-        f"⚠️ Safety: Pause after {staking_engine.MAX_CONSECUTIVE_LOSSES} consecutive losses.\n"
+        # FIXED: Use the constant MAX_CONSECUTIVE_LOSSES
+        f"⚠️ Safety: Pause after {MAX_CONSECUTIVE_LOSSES} consecutive losses.\n"
         "━━━━━━━━━━━━━━━━━━━━━"
     )
 
