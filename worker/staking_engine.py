@@ -2,7 +2,7 @@
 """
 Dynamic Percentage Staking Engine
 ================================
-Sequence: $10 → $15 → $25 → $40 → $60 → $90
+Sequence: $10 → $15 → $25 → 35
 Resets to $10 on any loss.
 Pauses for 1 hour after 3 consecutive losses.
 
@@ -32,11 +32,11 @@ logger = logging.getLogger("BetBot.Staking")
 # ============================================================
 
 # The Dynamic Percentage Sequence
-STAKE_SEQUENCE = [10, 15, 25, 40, 60, 90]
+STAKE_SEQUENCE = [10, 15, 25, 35]
 
 # Safety thresholds
 MAX_CONSECUTIVE_LOSSES = 3
-PAUSE_DURATION = 3600  # 1 hour in seconds
+PAUSE_DURATION = 1800  # 1 hour in seconds
 
 # Bet odds (fixed at 1.45)
 ODDS = 1.45
